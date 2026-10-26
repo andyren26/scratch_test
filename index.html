@@ -117,6 +117,7 @@
           <button class="primary" id="btnCheck">✔ 提交本題</button>
         </div>
         <div id="result" class="tablewrap"></div>
+        <p id="shotMsg" class="msg" hidden></p>
       </div>
     </section>
   </aside>
@@ -127,6 +128,7 @@
   <h3>成績單</h3>
   <div id="report" class="tablewrap"></div>
   <p id="rSend" class="msg"></p>
+  <p id="rShot" class="msg"></p>
   <label for="rCsv" class="note" style="display:block;margin-top:10px">CSV（可貼到 Excel）
     <textarea id="rCsv" rows="2" readonly style="width:100%;font-family:var(--font-mono);font-size:12px"></textarea></label>
   <div class="row"><button id="rCopy">複製成績</button><button id="rClose" style="margin-left:auto">關閉</button></div>
@@ -157,7 +159,7 @@
 const $ = (id) => document.getElementById(id);
 
 // ===== 1. 設定：貼上 Google Apps Script 部署後的「網頁應用程式」網址 =====
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyJzkvdvDcIN-7bUYouMnQ2QwWtYY_I9Op4r5GTdy-SRKGQPKuGxwUeVgNaH7h9kAoKAQ/exec";  // 例如 "https://script.google.com/macros/s/AKfy.../exec"
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGnLP4KYgutJN-Cy_C8KMLy19pRNvWHuEge0wlUozrGLbIEYGi81kaBa4AChKI0gYbfg/exec";  // 例如 "https://script.google.com/macros/s/AKfy.../exec"
 
 // 題庫從試算表「題庫」工作表讀取。每題 = 說明 + 輸入值（依序給「詢問並等待」）+ 測資 + 配分 + 評分方式 + 答案碼
 let questions = [];
@@ -1459,11 +1461,23 @@ $("btnRun").onclick = () => {
   const q = questions[current];
   showResult(gradeCurrent(true), false);
 };
-$("btnCheck").onclick = () => {
+$("btnCheck").onclick = async () => {
+  const who = studentInfoOrStop("提交");
+  if (!who) return;
+  const q = questions[current];
   const res = gradeCurrent(false);
-  scores[questions[current].id] = res.score;
+  scores[q.id] = res.score;
   showResult(res, true);
   renderTabs();
+  const say = (text, ok) => { $("shotMsg").hidden = false; $("shotMsg").textContent = text; $("shotMsg").className = "msg " + (ok ? "ok" : "err"); };
+  $("btnCheck").disabled = true;
+  try {
+    const img = await workspaceImage();
+    const png = composeShot(who, `提交本題：${q.title}`, [{ title:q.title, score:`${res.score} / ${q.points} 分`, img }]);
+    say("答題截圖上傳中…", true);
+    say(await uploadShot(who, png), true);
+  } catch (e) { say(e.message, false); }
+  finally { $("btnCheck").disabled = false; }
 };
 
 // ===== 11. 學生資料與交卷 =====
@@ -1507,21 +1521,30 @@ function studentErrors() {
   headMsg(err);
 }));
 
-$("btnSubmitAll").onclick = () => {
-  const cls = $("studentClass").value.trim(), seat = $("studentSeat").value.trim(), name = $("studentName").value.trim();
+// 提交本題、交卷前都要先填對班級、座號、姓名（截圖檔名要用）
+function studentInfoOrStop(action) {
   const errs = studentErrors();
   if (errs.length) {
-    headMsg(errs.map(e => e[1]).join(" ") + " 改正後才能交卷。");
+    headMsg(errs.map(e => e[1]).join(" ") + ` 改正後才能${action}。`);
     $(errs[0][0]).focus();
-    return;
+    return null;
   }
   headMsg("");
+  return { cls:$("studentClass").value.trim(), seat:$("studentSeat").value.trim(), name:$("studentName").value.trim() };
+}
+
+$("btnSubmitAll").onclick = async () => {
+  const who = studentInfoOrStop("交卷");
+  if (!who) return;
+  const { cls, seat, name } = who;
+  $("btnSubmitAll").disabled = true;
 
   saved[loadedId] = Blockly.serialization.workspaces.save(ws);
   const keep = current;
   let total = 0, full = 0, rows = "", csv = [];
-  const scoreMap = {};
-  questions.forEach((q, i) => {
+  const scoreMap = {}, sections = [];
+  for (let i = 0; i < questions.length; i++) {
+    const q = questions[i];
     current = i;
     loadedId = q.id;
     loadInto(ws, saved[q.id] || starterState());
@@ -1531,7 +1554,10 @@ $("btnSubmitAll").onclick = () => {
     total += res.score; full += Number(q.points);
     rows += `<tr><td>${esc(q.title)}</td><td>${res.passed}/${res.total}</td><td>${res.score} / ${q.points}</td></tr>`;
     csv.push(res.score);
-  });
+    let img = null;
+    try { img = await workspaceImage(); } catch (e) {}
+    sections.push({ title:q.title, score:`${res.score} / ${q.points} 分`, img });
+  }
   switchTo(keep); // 此時工作區內容與最後一題的存檔相同，可安全切回
   total = Math.round(total * 10) / 10;
   const cell = (s) => /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -1542,7 +1568,16 @@ $("btnSubmitAll").onclick = () => {
      <table><tr><th>題目</th><th>通過測資</th><th>得分</th></tr>${rows}
      <tr><th colspan="2">總分</th><th>${total} / ${full}</th></tr></table>`;
   $("reportDlg").showModal();
-  sendSubmission({ cls, seat, name, total, full, scores:scoreMap });
+  $("rShot").textContent = "";
+  await sendSubmission({ cls, seat, name, total, full, scores:scoreMap });
+  // 交卷截圖：所有題目的程式畫面合成一張
+  const sayShot = (text, ok) => { $("rShot").textContent = text; $("rShot").className = "msg " + (ok ? "ok" : "err"); };
+  $("btnSubmitAll").disabled = true;
+  try {
+    sayShot("答題截圖上傳中…", true);
+    sayShot(await uploadShot(who, composeShot(who, `交卷　總分 ${total} / ${full} 分`, sections)), true);
+  } catch (e) { sayShot(e.message, false); }
+  finally { $("btnSubmitAll").disabled = false; }
 };
 
 // 把成績送到 Google 試算表的「成績」工作表（每交一次新增一列）
@@ -1562,6 +1597,71 @@ async function sendSubmission(record) {
   } finally {
     $("btnSubmitAll").disabled = false;
   }
+}
+
+// ===== 答題截圖：把程式區的積木轉成圖片，上傳到老師的雲端硬碟 =====
+// Blockly 的積木是 SVG：複製一份、加上 Blockly 的樣式，畫到 canvas 上變成 PNG
+async function workspaceImage() {
+  if (Blockly.renderManagement && Blockly.renderManagement.finishQueuedRenders) await Blockly.renderManagement.finishQueuedRenders();
+  if (!ws.getTopBlocks(false).length) return null;
+  const canvas = ws.getCanvas(), box = canvas.getBBox();
+  if (!box.width || !box.height) return null;
+  const pad = 16, w = Math.ceil(box.width + pad * 2), h = Math.ceil(box.height + pad * 2);
+  const clone = canvas.cloneNode(true);
+  clone.removeAttribute("transform");
+  const css = [...document.querySelectorAll("style")].map(st => st.textContent).filter(t => t.includes("blockly")).join("\n");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" class="${ws.getParentSvg().getAttribute("class")}" width="${w}" height="${h}" viewBox="${box.x - pad} ${box.y - pad} ${w} ${h}">`
+    + `<style><![CDATA[${css}]]></style><rect x="${box.x - pad}" y="${box.y - pad}" width="${w}" height="${h}" fill="#f9f9f9"/>`
+    + `<g class="blocklyWorkspace">${new XMLSerializer().serializeToString(clone)}</g></svg>`;
+  const img = new Image();
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  await img.decode();
+  return img;
+}
+
+// 合成截圖：上方寫班級、座號、姓名、時間，下面依序放每一題的程式畫面
+function composeShot(who, heading, sections) {
+  const font = '"Microsoft JhengHei", "Noto Sans TC", "PingFang TC", sans-serif';
+  const maxW = 1600, maxH = 2400;
+  const fit = (img) => img ? Math.min(1, (maxW - 40) / img.width, maxH / img.height) : 1;
+  const W = Math.max(640, Math.min(maxW, Math.max(0, ...sections.map(s => s.img ? s.img.width * fit(s.img) + 40 : 0))));
+  const H = 96 + sections.reduce((sum, s) => sum + 44 + (s.img ? s.img.height * fit(s.img) : 40) + 16, 0);
+  const c = mkCanvas(Math.ceil(W), Math.ceil(H)), g = c.getContext("2d");
+  g.fillStyle = "#ffffff"; g.fillRect(0, 0, c.width, c.height);
+  g.fillStyle = "#4c97ff"; g.fillRect(0, 0, c.width, 84);
+  g.fillStyle = "#ffffff"; g.font = `bold 22px ${font}`;
+  g.fillText(`班級 ${who.cls}　座號 ${who.seat}　姓名 ${who.name}`, 20, 36);
+  g.font = `16px ${font}`;
+  g.fillText(`${heading}　　${new Date().toLocaleString()}`, 20, 66);
+  let y = 96;
+  for (const s of sections) {
+    g.fillStyle = "#3d4254"; g.font = `bold 18px ${font}`;
+    g.fillText(`${s.title}　（${s.score}）`, 20, y + 28);
+    y += 44;
+    if (s.img) {
+      const k = fit(s.img);
+      g.drawImage(s.img, 20, y, s.img.width * k, s.img.height * k);
+      g.strokeStyle = "#d9e0ec"; g.strokeRect(20, y, s.img.width * k, s.img.height * k);
+      y += s.img.height * k;
+    } else {
+      g.fillStyle = "#8a90a3"; g.font = `16px ${font}`; g.fillText("（程式區沒有積木）", 20, y + 24);
+      y += 40;
+    }
+    y += 16;
+  }
+  return c.toDataURL("image/png").split(",")[1];
+}
+
+async function uploadShot(who, png) {
+  if (!SCRIPT_URL) throw new Error("還沒設定網址，答題截圖沒有上傳。");
+  let data;
+  try {
+    const res = await fetch(SCRIPT_URL, { method:"POST", headers:{ "Content-Type":"text/plain;charset=utf-8" },
+      body:JSON.stringify({ type:"screenshot", cls:who.cls, seat:who.seat, name:who.name, image:png }) });
+    data = await res.json();
+  } catch (e) { throw new Error("答題截圖沒有上傳成功，請確認網路連線後再試一次。"); }
+  if (!data.ok) throw new Error("答題截圖沒有上傳成功：" + (data.error || "請告訴老師"));
+  return `✔ 答題截圖已上傳（${data.file}）。`;
 }
 $("rCopy").onclick = () => copyText($("rCsv").value, $("rCsv"), $("rMsg"), "已複製，可貼到 Excel");
 $("rClose").onclick = () => $("reportDlg").close();
