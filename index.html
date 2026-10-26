@@ -1,0 +1,1615 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>積木程式測驗</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+  /* 版面仿 Scratch 編輯器：藍色選單列 + 題目分頁；左邊題目卡，右邊積木區（分類 + 積木盤 + 程式區）；窄螢幕改上下排列 */
+  :root {
+    --bg:#e9eef8; --card:#ffffff; --ink:#575e75; --strong:#3d4254; --line:#d9e0ec;
+    --scratch:#4c97ff; --on-scratch:#ffffff; --tab:#d9e3f2; --code:#f2f5fb;
+    --ok:#0fbd8c; --ok-ink:#ffffff; --bad:#e0435b;
+    --font-body:"Helvetica Neue",Helvetica,Arial,"Noto Sans TC","Microsoft JhengHei",sans-serif;
+    --font-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg:#161b27; --card:#222838; --ink:#c3c9db; --strong:#eef1f8; --line:#363e55;
+    --scratch:#4c97ff; --on-scratch:#ffffff; --tab:#2b3247; --code:#2a3044;
+    --ok:#2fd3a3; --ok-ink:#0d1a16; --bad:#ff7b8e; color-scheme:dark; } }
+  :root[data-theme="dark"] {
+    --bg:#161b27; --card:#222838; --ink:#c3c9db; --strong:#eef1f8; --line:#363e55;
+    --scratch:#4c97ff; --on-scratch:#ffffff; --tab:#2b3247; --code:#2a3044;
+    --ok:#2fd3a3; --ok-ink:#0d1a16; --bad:#ff7b8e; color-scheme:dark; }
+
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  html, body { height:100%; }
+  body { margin:0; font-family:var(--font-body); font-size:15px; background:var(--bg); color:var(--ink); display:flex; flex-direction:column; }
+  .gutter { padding-left:max(16px, env(safe-area-inset-left, 0px)); padding-right:max(16px, env(safe-area-inset-right, 0px)); }
+  header { display:flex; align-items:center; gap:12px; padding-block:8px; background:var(--scratch); color:var(--on-scratch); flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0 auto 0 0; letter-spacing:.02em; }
+  header label { display:flex; align-items:center; gap:6px; }
+  header input { border-color:transparent; background:var(--on-scratch); color:#3d4254; }
+  header input.missing { outline:3px solid #ffd54a; }
+  header button { background:transparent; color:var(--on-scratch); border-color:rgba(255,255,255,.55); }
+  header button.primary { background:var(--ok); border-color:var(--ok); color:var(--ok-ink); }
+  .headMsg { flex-basis:100%; margin:0; padding:6px 10px; border-radius:6px; background:#fff4cc; color:#6b4e00; font-size:14px; }
+  input, textarea { font:inherit; color:var(--strong); background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:6px 8px; }
+  button { font:inherit; cursor:pointer; border:1px solid var(--line); border-radius:6px; padding:6px 12px; background:var(--card); color:var(--strong); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible { outline:2px solid var(--scratch); outline-offset:2px; }
+  button.primary { background:var(--ok); border-color:var(--ok); color:var(--ok-ink); font-weight:700; }
+  button.accent { background:var(--scratch); border-color:var(--scratch); color:var(--on-scratch); font-weight:700; }
+  #tabs { display:flex; gap:4px; padding-block:10px 0; overflow-x:auto; }
+  #tabs button { border-radius:8px 8px 0 0; border:none; background:var(--tab); white-space:nowrap; color:var(--ink); }
+  #tabs button.active { background:var(--card); font-weight:700; color:var(--strong); }
+  #tabs .score { font-size:12px; margin-left:6px; font-variant-numeric:tabular-nums; }
+  main { flex:1; display:flex; min-height:0; padding-block:0 16px; gap:12px; }
+  #blocklyDiv { flex:1; min-width:0; min-height:420px; border-radius:0 8px 8px 8px; overflow:hidden; border:1px solid var(--line); }
+  #side { width:clamp(320px, 34vw, 480px); min-width:0; display:flex; flex-direction:column; gap:10px; overflow:auto; }
+
+  /* 畫筆題的目標圖形（題目的一部分，不是可執行的舞台） */
+  #target { display:block; width:100%; max-width:320px; aspect-ratio:4/3; border:1px solid var(--line); border-radius:6px; background:#fff; }
+
+  /* 題目卡 */
+  #card { min-width:0; display:flex; flex-direction:column; gap:10px; background:var(--card); padding:14px; border-radius:8px; }
+  #card h2 { margin:0; font-size:18px; color:var(--strong); text-wrap:balance; }
+  #desc { white-space:pre-wrap; line-height:1.7; color:var(--strong); }
+  #empty { display:flex; flex-direction:column; gap:8px; line-height:1.7; color:var(--strong); }
+  #empty h2 { margin:0; }
+  .label { font-size:12px; letter-spacing:.08em; margin-bottom:4px; }
+  pre { background:var(--code); color:var(--strong); padding:8px; border-radius:6px; margin:0; white-space:pre-wrap; font-family:var(--font-mono); font-size:13px; }
+  .tablewrap { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; font-size:13px; font-variant-numeric:tabular-nums; color:var(--strong); }
+  td, th { border:1px solid var(--line); padding:4px 6px; text-align:left; vertical-align:top; }
+  .pass { color:var(--ok); font-weight:700; } .fail { color:var(--bad); font-weight:700; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; }
+  .note { font-size:13px; line-height:1.6; margin:0; }
+  .msg { font-size:14px; min-height:1.4em; margin:8px 0 0; }
+  .msg.err { color:var(--bad); } .msg.ok { color:var(--ok); }
+  dialog { border:1px solid var(--line); border-radius:10px; width:min(600px, 92vw); max-height:90vh; background:var(--card); color:var(--strong); }
+  dialog::backdrop { background:rgba(10,14,25,.45); }
+  dialog h3 { margin-top:0; }
+  dialog .row { margin-top:12px; }
+  #askDlg { width:min(380px, 92vw); }
+  #askDlg input { width:100%; }
+
+  /* Scratch 風格的分類列：彩色圓點 + 下方文字 */
+  .blocklyToolboxDiv { width:64px; padding:2px 0 !important; border-right:1px solid #d9d9d9; }
+  .blocklyToolboxDiv .blocklyTreeRow { display:flex; justify-content:center; height:auto !important; line-height:1.2; padding:5px 0 !important; margin:0 !important; border-radius:0; }
+  .blocklyToolboxDiv .blocklyTreeRowContentContainer { display:flex; flex-direction:column; align-items:center; gap:3px; }
+  .blocklyToolboxDiv .blocklyTreeRow:hover { background:#f0f4fc; }
+  .blocklyToolboxDiv .blocklyTreeRow.scratchSelected { background:#e9f1fc !important; }
+  .scratchCatDot { width:18px; height:18px; border-radius:50%; border:1px solid rgba(0,0,0,.15); }
+  .blocklyToolboxDiv .blocklyTreeLabel { font-family:var(--font-body); font-size:11px; color:#575e75; }
+  .blocklyToolboxDiv .scratchSelected .blocklyTreeLabel { color:#4c97ff; }
+  @media (max-width: 900px) { main { flex-direction:column; } #side { width:auto; overflow:visible; } #blocklyDiv { min-height:62vh; } body { height:auto; } }
+</style>
+
+<script src="https://unpkg.com/blockly@10.4.3/blockly.min.js"></script>
+<script src="https://unpkg.com/blockly@10.4.3/msg/zh-hant.js"></script>
+</head>
+<body>
+<header class="gutter">
+  <h1>積木程式測驗</h1>
+  <label for="studentClass">班級 <input id="studentClass" placeholder="例：701" size="5"></label>
+  <label for="studentSeat">座號 <input id="studentSeat" inputmode="numeric" placeholder="例：12" size="3"></label>
+  <label for="studentName">姓名 <input id="studentName" placeholder="請輸入姓名" size="8"></label>
+  <button id="btnSubmitAll" class="primary">交卷</button>
+  <button id="btnAnswerCode" hidden>產生答案碼</button>
+  <p id="headMsg" class="headMsg" hidden></p>
+</header>
+<div id="tabs" class="gutter"></div>
+<main class="gutter">
+  <aside id="side">
+    <section id="card">
+      <div id="empty"><h2>題庫載入中…</h2></div>
+      <div id="qPanel" hidden style="display:contents">
+        <h2 id="qTitle"></h2>
+        <div id="desc"></div>
+        <div><div class="label">範例</div><pre id="example"></pre></div>
+        <canvas id="target" width="480" height="360" hidden aria-label="目標圖形"></canvas>
+        <div class="row">
+          <button class="accent" id="btnRun">檢查範例</button>
+          <button class="primary" id="btnCheck">✔ 提交本題</button>
+        </div>
+        <div id="result" class="tablewrap"></div>
+      </div>
+    </section>
+  </aside>
+  <div id="blocklyDiv"></div>
+</main>
+
+<dialog id="reportDlg">
+  <h3>成績單</h3>
+  <div id="report" class="tablewrap"></div>
+  <p id="rSend" class="msg"></p>
+  <label for="rCsv" class="note" style="display:block;margin-top:10px">CSV（可貼到 Excel）
+    <textarea id="rCsv" rows="2" readonly style="width:100%;font-family:var(--font-mono);font-size:12px"></textarea></label>
+  <div class="row"><button id="rCopy">複製成績</button><button id="rClose" style="margin-left:auto">關閉</button></div>
+  <p id="rMsg" class="msg ok"></p>
+</dialog>
+
+<!-- 老師工具：網址後面加上 #teacher 才會出現 -->
+<dialog id="codeDlg">
+  <h3>答案碼</h3>
+  <p class="note">把程式區的參考答案轉成答案碼，貼到試算表「題庫」的「答案碼」欄。系統會用它算出每筆測資的標準答案。也可以把答案碼貼回來，載入到程式區修改。</p>
+  <textarea id="codeText" rows="6" style="width:100%;margin-top:8px;font-family:var(--font-mono);font-size:12px" aria-label="答案碼"></textarea>
+  <div class="row">
+    <button class="primary" id="codeCopy">複製</button>
+    <button id="codeLoad">載入到程式區</button>
+    <button id="codeClose" style="margin-left:auto">關閉</button>
+  </div>
+  <p id="codeMsg" class="msg"></p>
+</dialog>
+
+<!-- 取代瀏覽器的 prompt/confirm（建立變數、清單、積木時使用） -->
+<dialog id="askDlg">
+  <p id="askMsg"></p>
+  <input id="askInput">
+  <div class="row" style="justify-content:flex-end"><button id="askCancel">取消</button><button class="accent" id="askOk">確定</button></div>
+</dialog>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+// ===== 1. 設定：貼上 Google Apps Script 部署後的「網頁應用程式」網址 =====
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyJzkvdvDcIN-7bUYouMnQ2QwWtYY_I9Op4r5GTdy-SRKGQPKuGxwUeVgNaH7h9kAoKAQ/exec";  // 例如 "https://script.google.com/macros/s/AKfy.../exec"
+
+// 題庫從試算表「題庫」工作表讀取。每題 = 說明 + 輸入值（依序給「詢問並等待」）+ 測資 + 配分 + 評分方式 + 答案碼
+let questions = [];
+let current = 0;
+let loadedId = null; // 目前工作區裡是哪一題（以題目名稱當 id）
+const saved = {};    // 每題的積木狀態
+const scores = {};   // 每題得分
+let bankState = "loading"; // loading | ready | nourl | error
+let bankProblems = [];     // 試算表裡格式有問題的題目
+const MODES = ["說出", "畫筆", "角色位置", "音符"];
+
+// ===== 2. Scratch 外觀：顏色、字型、圖示 =====
+const svgUri = (svg) => "data:image/svg+xml," + encodeURIComponent(svg);
+const FLAG = svgUri(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M5.5 3v18" stroke="#45993d" stroke-width="2" stroke-linecap="round"/><path d="M6.5 4.5c3-2 6 2 9 0s3.5-1 3.5-1v9s-.5-1-3.5 1-6-2-9 0z" fill="#4cbf56" stroke="#45993d" stroke-width="1.2" stroke-linejoin="round"/></svg>`);
+const LOOP = svgUri(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 6v5a4 4 0 0 1-4 4H8" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><path d="M11 11l-4 4 4 4" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`);
+const TURN_CCW = svgUri(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6 15a7 7 0 1 1 7 6" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><path d="M3 11l3 5 4-4" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`);
+const TURN_CW = svgUri(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 15a7 7 0 1 0-7 6" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><path d="M21 11l-3 5-4-4" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`);
+const PEN_ICON = svgUri(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 20l2-6L16 4l4 4-10 10z" fill="#fff" stroke="#0b8e69" stroke-width="1.4" stroke-linejoin="round"/><path d="M4 20l2-6 4 4z" fill="#0b8e69"/></svg>`);
+const NOTE_ICON = svgUri(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13" fill="none" stroke="#fff" stroke-width="2"/><circle cx="6.5" cy="18" r="3" fill="#fff"/><circle cx="17.5" cy="16" r="3" fill="#fff"/></svg>`);
+
+const style = (p, s, t, extra) => Object.assign({ colourPrimary:p, colourSecondary:s, colourTertiary:t }, extra);
+const scratchTheme = Blockly.Theme.defineTheme("scratch", {
+  base: Blockly.Themes.Classic,
+  blockStyles: {
+    motion_blocks:    style("#4C97FF", "#4280D7", "#3373CC"),
+    looks_blocks:     style("#9966FF", "#855CD6", "#774DCB"),
+    sound_blocks:     style("#CF63CF", "#C94FC9", "#BD42BD"),
+    event_blocks:     style("#FFBF00", "#E6AC00", "#CC9900", { hat:"cap" }),
+    control_blocks:   style("#FFAB19", "#EC9C13", "#CF8B17"),
+    control_hat:      style("#FFAB19", "#EC9C13", "#CF8B17", { hat:"cap" }),
+    sensing_blocks:   style("#5CB1D6", "#47A8D1", "#2E8EB8"),
+    operator_blocks:  style("#59C059", "#46B946", "#389438"),
+    math_blocks:      style("#59C059", "#46B946", "#389438"),
+    text_blocks:      style("#59C059", "#46B946", "#389438"),
+    variable_blocks:  style("#FF8C1A", "#FF8000", "#DB6E00"),
+    list_blocks:      style("#FF661A", "#FF5500", "#E64D00"),
+    procedure_blocks: style("#FF6680", "#FF4D6A", "#FF3355", { hat:"cap" }),
+    pen_blocks:       style("#0FBD8C", "#0DA57A", "#0B8E69"),
+    music_blocks:     style("#0FBD8C", "#0DA57A", "#0B8E69"),
+  },
+  componentStyles: {
+    workspaceBackgroundColour:"#F9F9F9", toolboxBackgroundColour:"#FFFFFF", toolboxForegroundColour:"#575E75",
+    flyoutBackgroundColour:"#F9F9F9", flyoutForegroundColour:"#575E75", flyoutOpacity:1,
+    scrollbarColour:"#CECDCE", insertionMarkerColour:"#000000", insertionMarkerOpacity:0.2,
+  },
+  fontStyle: { family:'"Helvetica Neue", Helvetica, Arial, "Noto Sans TC", sans-serif', weight:"500", size:12 },
+});
+
+// 變數與「我的積木」沿用 Blockly 內建積木，改成 Scratch 的說法
+Object.assign(Blockly.Msg, {
+  NEW_VARIABLE:"建立一個變數", NEW_VARIABLE_TITLE:"新的變數名稱：",
+  VARIABLES_SET:"變數 %1 設為 %2", MATH_CHANGE_TITLE:"變數 %1 改變 %2",
+  PROCEDURES_DEFNORETURN_TITLE:"定義", PROCEDURES_DEFNORETURN_PROCEDURE:"積木名稱",
+  PROCEDURES_BEFORE_PARAMS:"參數：", PROCEDURES_CALL_BEFORE_PARAMS:"參數：",
+  PROCEDURES_MUTATORCONTAINER_TITLE:"參數", PROCEDURES_MUTATORARG_TITLE:"參數名稱：",
+  PROCEDURES_DEFNORETURN_TOOLTIP:"定義自己的積木", PROCEDURES_DEFNORETURN_COMMENT:"",
+  PROCEDURES_CALLNORETURN_TOOLTIP:"執行自己定義的積木",
+});
+
+// ===== 3. 積木定義（分類、文字、形狀照 Scratch 3 繁體中文版） =====
+const COSTUME_NAMES = ["機器人1", "機器人2", "箭頭", "球"];
+const BACKDROP_NAMES = ["空白", "座標格線", "迷宮"];
+const SOUND_NAMES = ["喵", "啵", "嗶", "鼓聲"];
+const KEY_OPTS = [["空白","space"],["向上","up"],["向下","down"],["向右","right"],["向左","left"],["任何","any"],
+  ..."abcdefghijklmnopqrstuvwxyz0123456789".split("").map(c => [c, c])];
+const INSTRUMENTS = ["(1) 鋼琴", "(2) 電子琴", "(3) 風琴", "(4) 吉他", "(5) 長笛", "(6) 木琴"];
+const DRUMS = ["(1) 小鼓", "(2) 大鼓", "(3) 鈸", "(4) 拍手"];
+
+// 廣播訊息的下拉選單：列出目前用到的訊息，最後一項可以新增
+const extraMsgs = new Set(["訊息1"]);
+function msgOptions() {
+  const set = new Set(extraMsgs);
+  try { ws.getAllBlocks(false).forEach(b => { const f = b.getField("BROADCAST_OPTION"); if (f && f.getValue() !== "__new__") set.add(f.getValue()); }); } catch (e) {}
+  return [...set].filter(Boolean).sort().map(m => [m, m]).concat([["新的訊息", "__new__"]]);
+}
+function collectMsgs(state) {
+  JSON.stringify(state || {}, (k, v) => { if (v && typeof v === "object" && typeof v.BROADCAST_OPTION === "string") extraMsgs.add(v.BROADCAST_OPTION); return v; });
+}
+Blockly.Extensions.register("broadcast_menu", function () {
+  this.getField("BROADCAST_OPTION").setValidator(function (v) {
+    if (v !== "__new__") return v;
+    blocklyDialog("prompt", "新的訊息名稱：", "", (name) => { name = (name || "").trim(); if (name) { extraMsgs.add(name); this.setValue(name); } });
+    return null;
+  });
+});
+
+const IN = (name, check) => check ? { type:"input_value", name, check } : { type:"input_value", name };
+const DD = (name, opts) => ({ type:"field_dropdown", name, options: typeof opts === "function" ? opts : opts.map(o => Array.isArray(o) ? o : [o, o]) });
+const IMG = (src) => ({ type:"field_image", src, width:24, height:24, alt:"*" });
+const VAR = (name) => ({ type:"field_variable", name, variable:"我的變數" });
+const LIST = (name) => ({ type:"field_variable", name, variable:"清單", variableTypes:["list"], defaultType:"list" });
+const stmt = (type, message0, args0, st, extra) => Object.assign({ type, message0, args0, previousStatement:null, nextStatement:null, style:st, inputsInline:true }, extra);
+const rep = (type, message0, args0, st, output) => ({ type, message0, args0, output: output === undefined ? null : output, style:st, inputsInline:true });
+const hat = (type, message0, args0, st, extra) => Object.assign({ type, message0, args0, nextStatement:null, style:st }, extra);
+const cblock = (type, message0, args0, extra) => Object.assign({ type, message0, args0,
+  message1:"%1", args1:[{ type:"input_statement", name:"SUBSTACK" }], previousStatement:null, nextStatement:null, style:"control_blocks" }, extra);
+
+Blockly.defineBlocksWithJsonArray([
+  { type:"scratch_text", message0:"%1", args0:[{ type:"field_input", name:"TEXT", text:"" }], output:null, style:"text_blocks" },
+
+  // 動作
+  stmt("motion_movesteps", "移動 %1 點", [IN("STEPS")], "motion_blocks"),
+  stmt("motion_turnright", "右轉 %1 %2 度", [IMG(TURN_CW), IN("DEGREES")], "motion_blocks"),
+  stmt("motion_turnleft", "左轉 %1 %2 度", [IMG(TURN_CCW), IN("DEGREES")], "motion_blocks"),
+  stmt("motion_goto", "定位到 %1", [DD("TO", [["隨機位置","random"],["鼠標","mouse"]])], "motion_blocks"),
+  stmt("motion_gotoxy", "定位到 x: %1 y: %2", [IN("X"), IN("Y")], "motion_blocks"),
+  stmt("motion_glideto", "滑行 %1 秒到 %2", [IN("SECS"), DD("TO", [["隨機位置","random"],["鼠標","mouse"]])], "motion_blocks"),
+  stmt("motion_glidesecstoxy", "滑行 %1 秒到 x: %2 y: %3", [IN("SECS"), IN("X"), IN("Y")], "motion_blocks"),
+  stmt("motion_pointindirection", "面朝 %1 度", [IN("DIRECTION")], "motion_blocks"),
+  stmt("motion_pointtowards", "面朝 %1 向", [DD("TOWARDS", [["鼠標","mouse"]])], "motion_blocks"),
+  stmt("motion_changexby", "x 改變 %1", [IN("DX")], "motion_blocks"),
+  stmt("motion_setx", "x 設為 %1", [IN("X")], "motion_blocks"),
+  stmt("motion_changeyby", "y 改變 %1", [IN("DY")], "motion_blocks"),
+  stmt("motion_sety", "y 設為 %1", [IN("Y")], "motion_blocks"),
+  stmt("motion_ifonedgebounce", "碰到邊緣就反彈", [], "motion_blocks"),
+  stmt("motion_setrotationstyle", "迴轉方式設為 %1", [DD("STYLE", [["左-右","left-right"],["不旋轉","don't rotate"],["任意旋轉","all around"]])], "motion_blocks"),
+  rep("motion_xposition", "x 座標", [], "motion_blocks", "Number"),
+  rep("motion_yposition", "y 座標", [], "motion_blocks", "Number"),
+  rep("motion_direction", "方向", [], "motion_blocks", "Number"),
+
+  // 外觀
+  stmt("looks_sayforsecs", "說出 %1 持續 %2 秒", [IN("MESSAGE"), IN("SECS")], "looks_blocks"),
+  stmt("looks_say", "說出 %1", [IN("MESSAGE")], "looks_blocks", { tooltip:"說出的內容會被當成答案，一次一行" }),
+  stmt("looks_thinkforsecs", "想著 %1 持續 %2 秒", [IN("MESSAGE"), IN("SECS")], "looks_blocks"),
+  stmt("looks_think", "想著 %1", [IN("MESSAGE")], "looks_blocks"),
+  stmt("looks_switchcostumeto", "造型換成 %1", [DD("COSTUME", COSTUME_NAMES)], "looks_blocks"),
+  stmt("looks_nextcostume", "下一個造型", [], "looks_blocks"),
+  stmt("looks_switchbackdropto", "背景換成 %1", [DD("BACKDROP", BACKDROP_NAMES)], "looks_blocks"),
+  stmt("looks_nextbackdrop", "下一個背景", [], "looks_blocks"),
+  stmt("looks_changesizeby", "尺寸改變 %1", [IN("CHANGE")], "looks_blocks"),
+  stmt("looks_setsizeto", "尺寸設為 %1 %", [IN("SIZE")], "looks_blocks"),
+  stmt("looks_changeeffectby", "圖像效果 %1 改變 %2", [DD("EFFECT", [["顏色","color"],["亮度","brightness"],["幻影","ghost"]]), IN("CHANGE")], "looks_blocks"),
+  stmt("looks_seteffectto", "圖像效果 %1 設為 %2", [DD("EFFECT", [["顏色","color"],["亮度","brightness"],["幻影","ghost"]]), IN("VALUE")], "looks_blocks"),
+  stmt("looks_cleargraphiceffects", "圖像效果清除", [], "looks_blocks"),
+  stmt("looks_show", "顯示", [], "looks_blocks"),
+  stmt("looks_hide", "隱藏", [], "looks_blocks"),
+  stmt("looks_gotofrontback", "移到最 %1 層", [DD("FRONT_BACK", [["上","front"],["下","back"]])], "looks_blocks"),
+  rep("looks_costumenumbername", "造型 %1", [DD("NUMBER_NAME", [["編號","number"],["名稱","name"]])], "looks_blocks"),
+  rep("looks_backdropnumbername", "背景 %1", [DD("NUMBER_NAME", [["編號","number"],["名稱","name"]])], "looks_blocks"),
+  rep("looks_size", "尺寸", [], "looks_blocks", "Number"),
+
+  // 音效
+  stmt("sound_playuntildone", "播放音效 %1 直到結束", [DD("SOUND", SOUND_NAMES)], "sound_blocks"),
+  stmt("sound_play", "播放音效 %1", [DD("SOUND", SOUND_NAMES)], "sound_blocks"),
+  stmt("sound_stopallsounds", "停播所有音效", [], "sound_blocks"),
+  stmt("sound_changevolumeby", "音量改變 %1", [IN("VOLUME")], "sound_blocks"),
+  stmt("sound_setvolumeto", "音量設為 %1 %", [IN("VOLUME")], "sound_blocks"),
+  rep("sound_volume", "音量", [], "sound_blocks", "Number"),
+
+  // 事件
+  hat("event_whenflagclicked", "當 %1 被點擊", [{ type:"field_image", src:FLAG, width:24, height:24, alt:"綠旗" }], "event_blocks", { tooltip:"按下綠旗時執行。評分時也是從這裡開始執行" }),
+  hat("event_whenkeypressed", "當 %1 鍵被按下", [DD("KEY_OPTION", KEY_OPTS)], "event_blocks"),
+  hat("event_whenthisspriteclicked", "當角色被點擊", [], "event_blocks"),
+  hat("event_whenbroadcastreceived", "當收到訊息 %1", [DD("BROADCAST_OPTION", msgOptions)], "event_blocks", { extensions:["broadcast_menu"] }),
+  stmt("event_broadcast", "廣播訊息 %1", [DD("BROADCAST_OPTION", msgOptions)], "event_blocks", { extensions:["broadcast_menu"] }),
+  stmt("event_broadcastandwait", "廣播訊息 %1 並等待", [DD("BROADCAST_OPTION", msgOptions)], "event_blocks", { extensions:["broadcast_menu"] }),
+
+  // 控制
+  stmt("control_wait", "等待 %1 秒", [IN("DURATION")], "control_blocks"),
+  cblock("control_repeat", "重複 %1 次", [IN("TIMES")], { message2:"%1", args2:[IMG(LOOP)], lastDummyAlign2:"RIGHT" }),
+  cblock("control_forever", "重複無限次", [], { message2:"%1", args2:[IMG(LOOP)], lastDummyAlign2:"RIGHT", nextStatement:undefined }),
+  cblock("control_if", "如果 %1 那麼", [IN("CONDITION", "Boolean")]),
+  cblock("control_if_else", "如果 %1 那麼", [IN("CONDITION", "Boolean")], { message2:"否則", message3:"%1", args3:[{ type:"input_statement", name:"SUBSTACK2" }] }),
+  stmt("control_wait_until", "等待直到 %1", [IN("CONDITION", "Boolean")], "control_blocks"),
+  cblock("control_repeat_until", "重複直到 %1", [IN("CONDITION", "Boolean")], { message2:"%1", args2:[IMG(LOOP)], lastDummyAlign2:"RIGHT" }),
+  stmt("control_stop", "停止 %1", [DD("STOP_OPTION", [["全部","all"],["這個程式","this script"],["這個角色的其他程式","other scripts in sprite"]])], "control_blocks"),
+  hat("control_start_as_clone", "當分身產生", [], "control_hat"),
+  stmt("control_create_clone_of", "建立 %1 的分身", [DD("CLONE_OPTION", [["自己","_myself_"]])], "control_blocks"),
+  { type:"control_delete_this_clone", message0:"分身刪除", previousStatement:null, style:"control_blocks" },
+
+  // 偵測
+  rep("sensing_touchingobject", "碰到 %1 ?", [DD("TOUCHINGOBJECTMENU", [["鼠標","mouse"],["邊緣","edge"]])], "sensing_blocks", "Boolean"),
+  rep("sensing_touchingcolor", "碰到顏色 %1 ?", [{ type:"field_colour", name:"COLOR", colour:"#000000" }], "sensing_blocks", "Boolean"),
+  rep("sensing_distanceto", "與 %1 的間距", [DD("DISTANCETOMENU", [["鼠標","mouse"]])], "sensing_blocks", "Number"),
+  stmt("sensing_askandwait", "詢問 %1 並等待", [IN("QUESTION")], "sensing_blocks", { tooltip:"評分時，每詢問一次就依序取得題目的下一個輸入值" }),
+  rep("sensing_answer", "詢問的答案", [], "sensing_blocks"),
+  rep("sensing_keypressed", "%1 鍵被按下?", [DD("KEY_OPTION", KEY_OPTS)], "sensing_blocks", "Boolean"),
+  rep("sensing_mousedown", "滑鼠鍵被按下?", [], "sensing_blocks", "Boolean"),
+  rep("sensing_mousex", "鼠標的 x", [], "sensing_blocks", "Number"),
+  rep("sensing_mousey", "鼠標的 y", [], "sensing_blocks", "Number"),
+  rep("sensing_timer", "計時器", [], "sensing_blocks", "Number"),
+  stmt("sensing_resettimer", "計時器重置", [], "sensing_blocks"),
+  rep("sensing_current", "目前時間的 %1", [DD("CURRENTMENU", [["年","YEAR"],["月","MONTH"],["日","DATE"],["星期","DAYOFWEEK"],["時","HOUR"],["分","MINUTE"],["秒","SECOND"]])], "sensing_blocks", "Number"),
+
+  // 運算
+  ...[["add","+"],["subtract","-"],["multiply","*"],["divide","/"]].map(([t, s]) =>
+    rep("operator_" + t, `%1 ${s} %2`, [IN("NUM1"), IN("NUM2")], "operator_blocks", "Number")),
+  rep("operator_random", "隨機取數 %1 到 %2", [IN("FROM"), IN("TO")], "operator_blocks", "Number"),
+  ...[["gt",">"],["lt","<"],["equals","="]].map(([t, s]) =>
+    rep("operator_" + t, `%1 ${s} %2`, [IN("OPERAND1"), IN("OPERAND2")], "operator_blocks", "Boolean")),
+  rep("operator_and", "%1 且 %2", [IN("OPERAND1", "Boolean"), IN("OPERAND2", "Boolean")], "operator_blocks", "Boolean"),
+  rep("operator_or", "%1 或 %2", [IN("OPERAND1", "Boolean"), IN("OPERAND2", "Boolean")], "operator_blocks", "Boolean"),
+  rep("operator_not", "%1 不成立", [IN("OPERAND", "Boolean")], "operator_blocks", "Boolean"),
+  rep("operator_join", "字串組合 %1 %2", [IN("STRING1"), IN("STRING2")], "operator_blocks", "String"),
+  rep("operator_letter_of", "字串 %1 的第 %2 字", [IN("STRING"), IN("LETTER")], "operator_blocks", "String"),
+  rep("operator_length", "字串 %1 的長度", [IN("STRING")], "operator_blocks", "Number"),
+  rep("operator_contains", "字串 %1 包含 %2 ?", [IN("STRING1"), IN("STRING2")], "operator_blocks", "Boolean"),
+  rep("operator_mod", "%1 除以 %2 的餘數", [IN("NUM1"), IN("NUM2")], "operator_blocks", "Number"),
+  rep("operator_round", "四捨五入數值 %1", [IN("NUM")], "operator_blocks", "Number"),
+  rep("operator_mathop", "%1 數值 %2", [DD("OPERATOR", [["絕對值","abs"],["無條件捨去","floor"],["無條件進位","ceiling"],["平方根","sqrt"],["sin","sin"],["cos","cos"],["tan","tan"],["asin","asin"],["acos","acos"],["atan","atan"],["ln","ln"],["log","log"],["e ^","e ^"],["10 ^","10 ^"]]), IN("NUM")], "operator_blocks", "Number"),
+
+  // 變數與清單
+  stmt("data_showvariable", "顯示變數 %1", [VAR("VARIABLE")], "variable_blocks"),
+  stmt("data_hidevariable", "隱藏變數 %1", [VAR("VARIABLE")], "variable_blocks"),
+  rep("data_listcontents", "%1", [LIST("LIST")], "list_blocks"),
+  stmt("data_addtolist", "新增 %1 到 %2", [IN("ITEM"), LIST("LIST")], "list_blocks"),
+  stmt("data_deleteoflist", "刪除 %2 的第 %1 項", [IN("INDEX"), LIST("LIST")], "list_blocks"),
+  stmt("data_deletealloflist", "刪除 %1 的所有項目", [LIST("LIST")], "list_blocks"),
+  stmt("data_insertatlist", "插入 %1 到 %3 的第 %2 項", [IN("ITEM"), IN("INDEX"), LIST("LIST")], "list_blocks"),
+  stmt("data_replaceitemoflist", "替換 %2 的第 %1 項為 %3", [IN("INDEX"), LIST("LIST"), IN("ITEM")], "list_blocks"),
+  rep("data_itemoflist", "%2 的第 %1 項", [IN("INDEX"), LIST("LIST")], "list_blocks"),
+  rep("data_itemnumoflist", "%2 中第一個 %1 的項目編號", [IN("ITEM"), LIST("LIST")], "list_blocks", "Number"),
+  rep("data_lengthoflist", "%1 的項目數量", [LIST("LIST")], "list_blocks", "Number"),
+  rep("data_listcontainsitem", "%1 包含 %2 ?", [LIST("LIST"), IN("ITEM")], "list_blocks", "Boolean"),
+  stmt("data_showlist", "顯示清單 %1", [LIST("LIST")], "list_blocks"),
+  stmt("data_hidelist", "隱藏清單 %1", [LIST("LIST")], "list_blocks"),
+
+  // 畫筆（擴充）
+  stmt("pen_clear", "%1 筆跡全部清除", [IMG(PEN_ICON)], "pen_blocks"),
+  stmt("pen_stamp", "%1 蓋章", [IMG(PEN_ICON)], "pen_blocks"),
+  stmt("pen_pendown", "%1 下筆", [IMG(PEN_ICON)], "pen_blocks"),
+  stmt("pen_penup", "%1 停筆", [IMG(PEN_ICON)], "pen_blocks"),
+  stmt("pen_setpencolortocolor", "%1 筆跡顏色設為 %2", [IMG(PEN_ICON), { type:"field_colour", name:"COLOR", colour:"#4c97ff" }], "pen_blocks"),
+  stmt("pen_changepencolorparamby", "%1 筆跡 %2 改變 %3", [IMG(PEN_ICON), DD("COLOR_PARAM", [["顏色","color"],["亮度","brightness"],["透明度","transparency"]]), IN("VALUE")], "pen_blocks"),
+  stmt("pen_setpencolorparamto", "%1 筆跡 %2 設為 %3", [IMG(PEN_ICON), DD("COLOR_PARAM", [["顏色","color"],["亮度","brightness"],["透明度","transparency"]]), IN("VALUE")], "pen_blocks"),
+  stmt("pen_changepensizeby", "%1 筆跡寬度改變 %2", [IMG(PEN_ICON), IN("SIZE")], "pen_blocks"),
+  stmt("pen_setpensizeto", "%1 筆跡寬度設為 %2", [IMG(PEN_ICON), IN("SIZE")], "pen_blocks"),
+
+  // 音樂（擴充）
+  stmt("music_playDrumForBeats", "%1 彈奏 %2 %3 拍", [IMG(NOTE_ICON), DD("DRUM", DRUMS), IN("BEATS")], "music_blocks"),
+  stmt("music_restForBeats", "%1 休息 %2 拍", [IMG(NOTE_ICON), IN("BEATS")], "music_blocks"),
+  stmt("music_playNoteForBeats", "%1 演奏音符 %2 %3 拍", [IMG(NOTE_ICON), IN("NOTE"), IN("BEATS")], "music_blocks", { tooltip:"60 是中央 Do，62 是 Re，64 是 Mi，65 是 Fa，67 是 Sol，69 是 La，71 是 Si，72 是高音 Do" }),
+  stmt("music_setInstrument", "%1 樂器設為 %2", [IMG(NOTE_ICON), DD("INSTRUMENT", INSTRUMENTS.map((n, i) => [n, String(i)]))], "music_blocks"),
+  stmt("music_setTempo", "%1 演奏速度設為 %2", [IMG(NOTE_ICON), IN("TEMPO")], "music_blocks"),
+  stmt("music_changeTempo", "%1 演奏速度改變 %2", [IMG(NOTE_ICON), IN("TEMPO")], "music_blocks"),
+  rep("music_getTempo", "%1 演奏速度", [IMG(NOTE_ICON)], "music_blocks", "Number"),
+]);
+
+// ===== 4. 積木轉成程式碼 =====
+// 每個程式（帽子積木下面那一串）變成一個 generator 函式，迴圈尾端和「等待」會暫停，模擬 Scratch 一格一格的執行，
+// 也讓好幾個程式、分身可以同時執行，跟 Scratch 一樣。
+const gen = (window.javascript && javascript.javascriptGenerator) || Blockly.JavaScript;
+const def = (type, fn) => { if (gen.forBlock) gen.forBlock[type] = fn; else gen[type] = fn; };
+const NT = Blockly.Names.NameType;
+const val = (b, name, dflt = "0") => gen.valueToCode(b, name, 99) || dflt;
+const sval = (b, name) => val(b, name, "''");
+const fld = (b, name) => JSON.stringify(b.getFieldValue(name));
+const sub = (b, name) => gen.statementToCode(b, name);
+const YIELD = "  if (A.yc()) yield 0;\n";
+const procName = (name) => "P_" + gen.nameDB_.getName(name, NT.PROCEDURE);
+
+// 「我的積木」的參數是區域變數（遞迴才會正確）；其他變數存在 A.vars
+function localParam(b, id) {
+  const v = b.workspace.getVariableById(id);
+  const root = b.getRootBlock();
+  if (!v || root.type !== "procedures_defnoreturn") return null;
+  const i = root.getVars().indexOf(v.name);
+  return i >= 0 ? "a" + i : null;
+}
+const varRef = (b, id) => localParam(b, id) || `V[${JSON.stringify(id)}]`;
+
+const G = {
+  scratch_text: (b) => [JSON.stringify(b.getFieldValue("TEXT")), 0],
+
+  motion_movesteps: (b) => `A.move(T, ${val(b, "STEPS")});\n`,
+  motion_turnright: (b) => `A.turn(T, A.N(${val(b, "DEGREES")}));\n`,
+  motion_turnleft: (b) => `A.turn(T, -A.N(${val(b, "DEGREES")}));\n`,
+  motion_goto: (b) => `A.goTo(T, ${fld(b, "TO")});\n`,
+  motion_gotoxy: (b) => `A.setXY(T, ${val(b, "X")}, ${val(b, "Y")});\n`,
+  motion_glideto: (b) => `yield* A.glideTo(T, ${val(b, "SECS")}, ${fld(b, "TO")});\n`,
+  motion_glidesecstoxy: (b) => `yield* A.glide(T, ${val(b, "SECS")}, ${val(b, "X")}, ${val(b, "Y")});\n`,
+  motion_pointindirection: (b) => `A.setDir(T, ${val(b, "DIRECTION")});\n`,
+  motion_pointtowards: (b) => `A.pointTowards(T, ${fld(b, "TOWARDS")});\n`,
+  motion_changexby: (b) => `A.setXY(T, T.x + A.N(${val(b, "DX")}), T.y);\n`,
+  motion_setx: (b) => `A.setXY(T, ${val(b, "X")}, T.y);\n`,
+  motion_changeyby: (b) => `A.setXY(T, T.x, T.y + A.N(${val(b, "DY")}));\n`,
+  motion_sety: (b) => `A.setXY(T, T.x, ${val(b, "Y")});\n`,
+  motion_ifonedgebounce: () => `A.bounce(T);\n`,
+  motion_setrotationstyle: (b) => `A.setRotStyle(T, ${fld(b, "STYLE")});\n`,
+  motion_xposition: () => ["A.lim(T.x)", 0],
+  motion_yposition: () => ["A.lim(T.y)", 0],
+  motion_direction: () => ["T.dir", 0],
+
+  looks_sayforsecs: (b) => `yield* A.sayFor(T, ${sval(b, "MESSAGE")}, ${val(b, "SECS")}, "say");\n`,
+  looks_say: (b) => `A.say(T, ${sval(b, "MESSAGE")}, "say");\n`,
+  looks_thinkforsecs: (b) => `yield* A.sayFor(T, ${sval(b, "MESSAGE")}, ${val(b, "SECS")}, "think");\n`,
+  looks_think: (b) => `A.say(T, ${sval(b, "MESSAGE")}, "think");\n`,
+  looks_switchcostumeto: (b) => `A.setCostume(T, ${fld(b, "COSTUME")});\n`,
+  looks_nextcostume: () => `A.setCostume(T, T.costume + 2);\n`,
+  looks_switchbackdropto: (b) => `A.setBackdrop(${fld(b, "BACKDROP")});\n`,
+  looks_nextbackdrop: () => `A.setBackdrop(A.backdrop + 2);\n`,
+  looks_changesizeby: (b) => `A.setSize(T, T.size + A.N(${val(b, "CHANGE")}));\n`,
+  looks_setsizeto: (b) => `A.setSize(T, ${val(b, "SIZE")});\n`,
+  looks_changeeffectby: (b) => `A.setEffect(T, ${fld(b, "EFFECT")}, T.effects[${fld(b, "EFFECT")}] + A.N(${val(b, "CHANGE")}));\n`,
+  looks_seteffectto: (b) => `A.setEffect(T, ${fld(b, "EFFECT")}, ${val(b, "VALUE")});\n`,
+  looks_cleargraphiceffects: () => `A.clearEffects(T);\n`,
+  looks_show: () => `A.setVisible(T, true);\n`,
+  looks_hide: () => `A.setVisible(T, false);\n`,
+  looks_gotofrontback: (b) => `A.layer(T, ${fld(b, "FRONT_BACK")});\n`,
+  looks_costumenumbername: (b) => [`A.costumeInfo(T, ${fld(b, "NUMBER_NAME")})`, 0],
+  looks_backdropnumbername: (b) => [`A.backdropInfo(${fld(b, "NUMBER_NAME")})`, 0],
+  looks_size: () => ["Math.round(T.size)", 0],
+
+  sound_playuntildone: (b) => `yield* A.playSound(${fld(b, "SOUND")}, true);\n`,
+  sound_play: (b) => `yield* A.playSound(${fld(b, "SOUND")}, false);\n`,
+  sound_stopallsounds: () => `A.stopSounds();\n`,
+  sound_changevolumeby: (b) => `A.setVolume(A.volume + A.N(${val(b, "VOLUME")}));\n`,
+  sound_setvolumeto: (b) => `A.setVolume(${val(b, "VOLUME")});\n`,
+  sound_volume: () => ["A.volume", 0],
+
+  event_whenflagclicked: () => "",
+  event_whenkeypressed: () => "",
+  event_whenthisspriteclicked: () => "",
+  event_whenbroadcastreceived: () => "",
+  event_broadcast: (b) => `A.broadcast(${fld(b, "BROADCAST_OPTION")});\n`,
+  event_broadcastandwait: (b) => `yield* A.broadcastWait(${fld(b, "BROADCAST_OPTION")});\n`,
+
+  control_wait: (b) => `yield* A.waitSecs(${val(b, "DURATION")});\n`,
+  control_repeat: (b) => {
+    const i = gen.nameDB_.getDistinctName("count", NT.VARIABLE);
+    return `for (let ${i} = Math.round(A.N(${val(b, "TIMES")})); ${i} > 0; ${i}--) {\n${sub(b, "SUBSTACK")}${YIELD}}\n`;
+  },
+  control_forever: (b) => `while (true) {\n${sub(b, "SUBSTACK")}${YIELD}}\n`,
+  control_if: (b) => `if (A.B(${val(b, "CONDITION", "false")})) {\n${sub(b, "SUBSTACK")}}\n`,
+  control_if_else: (b) => `if (A.B(${val(b, "CONDITION", "false")})) {\n${sub(b, "SUBSTACK")}} else {\n${sub(b, "SUBSTACK2")}}\n`,
+  control_wait_until: (b) => `while (!A.B(${val(b, "CONDITION", "false")})) yield 1;\n`,
+  control_repeat_until: (b) => `while (!A.B(${val(b, "CONDITION", "false")})) {\n${sub(b, "SUBSTACK")}${YIELD}}\n`,
+  control_stop: (b) => ({ "all":"throw A.STOP_ALL;\n", "this script":"return;\n" })[b.getFieldValue("STOP_OPTION")] || `A.stopOthers(T);\n`,
+  control_start_as_clone: () => "",
+  control_create_clone_of: () => `A.clone(T);\n`,
+  control_delete_this_clone: () => `A.deleteClone(T);\n`,
+
+  sensing_touchingobject: (b) => [`A.touching(T, ${fld(b, "TOUCHINGOBJECTMENU")})`, 0],
+  sensing_touchingcolor: (b) => [`A.touchingColor(T, ${fld(b, "COLOR")})`, 0],
+  sensing_distanceto: () => [`A.distanceToMouse(T)`, 0],
+  sensing_askandwait: (b) => `yield* A.ask(T, ${sval(b, "QUESTION")});\n`,
+  sensing_answer: () => ["A.answer", 0],
+  sensing_keypressed: (b) => [`A.keyDown(${fld(b, "KEY_OPTION")})`, 0],
+  sensing_mousedown: () => ["A.mouse.down", 0],
+  sensing_mousex: () => ["Math.round(A.mouse.x)", 0],
+  sensing_mousey: () => ["Math.round(A.mouse.y)", 0],
+  sensing_timer: () => ["A.timer()", 0],
+  sensing_resettimer: () => `A.resetTimer();\n`,
+  sensing_current: (b) => [`A.current(${fld(b, "CURRENTMENU")})`, 0],
+
+  operator_random: (b) => [`A.random(${val(b, "FROM")}, ${val(b, "TO")})`, 0],
+  operator_and: (b) => [`(A.B(${val(b, "OPERAND1", "false")}) && A.B(${val(b, "OPERAND2", "false")}))`, 0],
+  operator_or: (b) => [`(A.B(${val(b, "OPERAND1", "false")}) || A.B(${val(b, "OPERAND2", "false")}))`, 0],
+  operator_not: (b) => [`(!A.B(${val(b, "OPERAND", "false")}))`, 0],
+  operator_join: (b) => [`(String(${sval(b, "STRING1")}) + String(${sval(b, "STRING2")}))`, 0],
+  operator_letter_of: (b) => [`A.letterOf(${sval(b, "STRING")}, ${val(b, "LETTER")})`, 0],
+  operator_length: (b) => [`String(${sval(b, "STRING")}).length`, 0],
+  operator_contains: (b) => [`A.contains(${sval(b, "STRING1")}, ${sval(b, "STRING2")})`, 0],
+  operator_mod: (b) => [`A.mod(${val(b, "NUM1")}, ${val(b, "NUM2")})`, 0],
+  operator_round: (b) => [`Math.round(A.N(${val(b, "NUM")}))`, 0],
+  operator_mathop: (b) => [`A.mathop(${fld(b, "OPERATOR")}, ${val(b, "NUM")})`, 0],
+
+  variables_get: (b) => [varRef(b, b.getFieldValue("VAR")), 0],
+  variables_set: (b) => `${varRef(b, b.getFieldValue("VAR"))} = ${sval(b, "VALUE")};\n`,
+  math_change: (b) => { const v = varRef(b, b.getFieldValue("VAR")); return `${v} = A.N(${v}) + A.N(${val(b, "DELTA")});\n`; },
+  data_showvariable: (b) => `A.showMon(${fld(b, "VARIABLE")}, true);\n`,
+  data_hidevariable: (b) => `A.showMon(${fld(b, "VARIABLE")}, false);\n`,
+  data_listcontents: (b) => [`A.listText(${fld(b, "LIST")})`, 0],
+  data_addtolist: (b) => `A.listAdd(${fld(b, "LIST")}, ${sval(b, "ITEM")});\n`,
+  data_deleteoflist: (b) => `A.listDelete(${fld(b, "LIST")}, ${val(b, "INDEX")});\n`,
+  data_deletealloflist: (b) => `A.listClear(${fld(b, "LIST")});\n`,
+  data_insertatlist: (b) => `A.listInsert(${fld(b, "LIST")}, ${val(b, "INDEX")}, ${sval(b, "ITEM")});\n`,
+  data_replaceitemoflist: (b) => `A.listReplace(${fld(b, "LIST")}, ${val(b, "INDEX")}, ${sval(b, "ITEM")});\n`,
+  data_itemoflist: (b) => [`A.listItem(${fld(b, "LIST")}, ${val(b, "INDEX")})`, 0],
+  data_itemnumoflist: (b) => [`A.listIndexOf(${fld(b, "LIST")}, ${sval(b, "ITEM")})`, 0],
+  data_lengthoflist: (b) => [`A.list(${fld(b, "LIST")}).length`, 0],
+  data_listcontainsitem: (b) => [`(A.listIndexOf(${fld(b, "LIST")}, ${sval(b, "ITEM")}) > 0)`, 0],
+  data_showlist: (b) => `A.showMon(${fld(b, "LIST")}, true);\n`,
+  data_hidelist: (b) => `A.showMon(${fld(b, "LIST")}, false);\n`,
+
+  procedures_defnoreturn: () => null,
+  procedures_callnoreturn: (b) => {
+    const name = b.getFieldValue("NAME");
+    if (!Blockly.Procedures.getDefinition(name, b.workspace)) return `/* 找不到積木：${name.replace(/\*\//g, "")} */\n`;
+    const args = b.getVars().map((_, i) => sval(b, "ARG" + i));
+    return `yield* ${procName(name)}(T${args.map(a => ", " + a).join("")});\n`;
+  },
+
+  pen_clear: () => `A.penClear();\n`,
+  pen_stamp: () => `A.stamp(T);\n`,
+  pen_pendown: () => `A.penDown(T, true);\n`,
+  pen_penup: () => `A.penDown(T, false);\n`,
+  pen_setpencolortocolor: (b) => `A.penColor(T, ${fld(b, "COLOR")});\n`,
+  pen_changepencolorparamby: (b) => `A.penParam(T, ${fld(b, "COLOR_PARAM")}, ${val(b, "VALUE")}, true);\n`,
+  pen_setpencolorparamto: (b) => `A.penParam(T, ${fld(b, "COLOR_PARAM")}, ${val(b, "VALUE")}, false);\n`,
+  pen_changepensizeby: (b) => `A.penSize(T, T.pen.size + A.N(${val(b, "SIZE")}));\n`,
+  pen_setpensizeto: (b) => `A.penSize(T, ${val(b, "SIZE")});\n`,
+
+  music_playDrumForBeats: (b) => `yield* A.drum(${fld(b, "DRUM")}, ${val(b, "BEATS")});\n`,
+  music_restForBeats: (b) => `yield* A.rest(${val(b, "BEATS")});\n`,
+  music_playNoteForBeats: (b) => `yield* A.playNote(${val(b, "NOTE")}, ${val(b, "BEATS")});\n`,
+  music_setInstrument: (b) => `A.instrument = ${fld(b, "INSTRUMENT")} * 1;\n`,
+  music_setTempo: (b) => `A.setTempo(${val(b, "TEMPO")});\n`,
+  music_changeTempo: (b) => `A.setTempo(A.tempo + A.N(${val(b, "TEMPO")}));\n`,
+  music_getTempo: () => ["A.tempo", 0],
+};
+for (const [t, s] of [["add","+"],["subtract","-"],["multiply","*"],["divide","/"]])
+  G["operator_" + t] = (b) => [`(A.N(${val(b, "NUM1")}) ${s} A.N(${val(b, "NUM2")}))`, 0];
+for (const [t, s] of [["gt","> 0"],["lt","< 0"],["equals","=== 0"]])
+  G["operator_" + t] = (b) => [`(A.C(${sval(b, "OPERAND1")}, ${sval(b, "OPERAND2")}) ${s})`, 0];
+for (const t in G) def(t, G[t]);
+
+const HATS = { event_whenflagclicked:"flag", event_whenkeypressed:"key", event_whenthisspriteclicked:"click",
+               event_whenbroadcastreceived:"msg", control_start_as_clone:"clone" };
+
+// 把一個工作區編譯成可執行的程式
+function compile(w) {
+  gen.init(w);
+  const tops = w.getTopBlocks(true).filter(b => b.isEnabled());
+  const procs = tops.filter(b => b.type === "procedures_defnoreturn").map(b => {
+    const params = b.getVars().map((_, i) => ", a" + i).join("");
+    return `function* ${procName(b.getFieldValue("NAME"))}(T${params}) {\n${sub(b, "STACK")}}\n`;
+  });
+  const s = { flag:[], key:[], click:[], msg:[], clone:[] };
+  for (const b of tops) {
+    const kind = HATS[b.type];
+    if (!kind) continue;
+    const fn = `function* (T) {\n${gen.blockToCode(b)}}`;
+    if (kind === "key") s.key.push(`{ k:${fld(b, "KEY_OPTION")}, f:${fn} }`);
+    else if (kind === "msg") s.msg.push(`{ m:${fld(b, "BROADCAST_OPTION")}, f:${fn} }`);
+    else s[kind].push(fn);
+  }
+  const src = `"use strict";\nconst V = A.vars;\n${procs.join("")}return { flag:[${s.flag}], key:[${s.key}], click:[${s.click}], msg:[${s.msg}], clone:[${s.clone}] };`;
+  return {
+    factory: new Function("A", src),
+    hasFlag: s.flag.length > 0,
+    variables: w.getAllVariables().map(v => ({ id:v.getId(), name:v.name, type:v.type })),
+  };
+}
+
+// ===== 5. 舞台：造型、背景、聲音 =====
+const mkCanvas = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+function rrect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function makeCostume(name, w, h, cx, cy, draw) {
+  const c = mkCanvas(w * 2, h * 2), g = c.getContext("2d");
+  g.scale(2, 2); g.lineJoin = "round"; g.lineCap = "round"; draw(g);
+  return { name, w, h, cx, cy, canvas:c };
+}
+function drawRobot(g, armsUp) {
+  g.strokeStyle = "#7a4a00"; g.lineWidth = 2.5;
+  g.beginPath(); g.moveTo(30, 13); g.lineTo(30, 5); g.stroke();
+  g.fillStyle = "#ff6680"; g.beginPath(); g.arc(30, 5, 3.5, 0, 7); g.fill(); g.stroke();
+  g.beginPath(); armsUp ? (g.moveTo(15, 46), g.lineTo(6, 34), g.moveTo(45, 46), g.lineTo(54, 34)) : (g.moveTo(15, 46), g.lineTo(7, 58), g.moveTo(45, 46), g.lineTo(53, 58)); g.stroke();
+  g.fillStyle = "#ffa600"; rrect(g, 15, 40, 30, 22, 6); g.fill(); g.stroke();
+  g.fillStyle = "#fff6"; rrect(g, 22, 46, 16, 8, 3); g.fill();
+  g.fillStyle = "#7a4a00"; armsUp ? (g.fillRect(16, 62, 8, 7), g.fillRect(36, 62, 8, 7)) : (g.fillRect(19, 62, 8, 8), g.fillRect(33, 62, 8, 8));
+  g.fillStyle = "#ffc23d"; rrect(g, 10, 13, 40, 28, 9); g.fill(); g.stroke();
+  g.fillStyle = "#fff"; g.beginPath(); g.arc(24, 27, 6, 0, 7); g.arc(39, 27, 6, 0, 7); g.fill();
+  g.fillStyle = "#333"; g.beginPath(); g.arc(26.5, 27, 3, 0, 7); g.arc(41.5, 27, 3, 0, 7); g.fill();
+}
+const COSTUMES = [
+  makeCostume("機器人1", 60, 72, 30, 40, (g) => drawRobot(g, false)),
+  makeCostume("機器人2", 60, 72, 30, 40, (g) => drawRobot(g, true)),
+  makeCostume("箭頭", 64, 40, 32, 20, (g) => {
+    g.fillStyle = "#4c97ff"; g.strokeStyle = "#3373cc"; g.lineWidth = 2;
+    g.beginPath(); [[4,13],[40,13],[40,4],[60,20],[40,36],[40,27],[4,27]].forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); g.fill(); g.stroke();
+  }),
+  makeCostume("球", 40, 40, 20, 20, (g) => {
+    g.fillStyle = "#ff6b6b"; g.strokeStyle = "#c94a4a"; g.lineWidth = 2; g.beginPath(); g.arc(20, 20, 17, 0, 7); g.fill(); g.stroke();
+    g.fillStyle = "#fff8"; g.beginPath(); g.arc(14, 13, 5, 0, 7); g.fill();
+  }),
+];
+const BACKDROPS = [
+  (g) => { g.fillStyle = "#fff"; g.fillRect(0, 0, 480, 360); },
+  (g) => {
+    g.fillStyle = "#fff"; g.fillRect(0, 0, 480, 360);
+    g.strokeStyle = "#e3e9f3"; g.lineWidth = 1; g.beginPath();
+    for (let x = 0; x <= 480; x += 20) { g.moveTo(x + .5, 0); g.lineTo(x + .5, 360); }
+    for (let y = 0; y <= 360; y += 20) { g.moveTo(0, y + .5); g.lineTo(480, y + .5); }
+    g.stroke();
+    g.strokeStyle = "#9aa7bd"; g.beginPath(); g.moveTo(0, 180.5); g.lineTo(480, 180.5); g.moveTo(240.5, 0); g.lineTo(240.5, 360); g.stroke();
+    g.fillStyle = "#7d8aa3"; g.font = "10px sans-serif";
+    for (let x = -200; x <= 200; x += 100) if (x) g.fillText(x, 240 + x + 2, 192);
+    for (let y = -100; y <= 100; y += 100) if (y) g.fillText(y, 244, 180 - y - 2);
+    g.fillText("x", 470, 192); g.fillText("y", 244, 10);
+  },
+  (g) => {
+    g.fillStyle = "#f6f1e3"; g.fillRect(0, 0, 480, 360);
+    g.fillStyle = "#3dbb6a"; g.fillRect(410, 10, 60, 60);
+    g.fillStyle = "#fff"; g.font = "bold 14px sans-serif"; g.fillText("終點", 424, 45);
+    g.fillStyle = "#222";
+    [[0,0,480,8],[0,352,480,8],[0,0,8,360],[472,0,8,360],
+     [90,80,8,280],[180,0,8,260],[270,100,8,260],[360,0,8,280],[98,170,50,8],[278,190,50,8]].forEach(r => g.fillRect(...r));
+  },
+];
+const backdropCache = BACKDROPS.map(draw => { const c = mkCanvas(480, 360); draw(c.getContext("2d")); return c; });
+
+// 聲音用 Web Audio 合成，評分時不發出聲音
+let audioCtx = null;
+const activeNodes = new Set();
+function audio() { if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } return audioCtx; }
+function tone(freqs, dur, type, vol, decay) {
+  const ac = audio(); if (!ac || vol <= 0) return;
+  const o = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime;
+  o.type = type;
+  freqs.forEach((f, i) => o.frequency[i ? "linearRampToValueAtTime" : "setValueAtTime"](f, t + dur * i / Math.max(1, freqs.length - 1)));
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25 * vol, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(decay ? 0.0001 : 0.2 * vol, t + dur * (decay ? 1 : 0.9)); g.gain.linearRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(ac.destination); o.start(t); o.stop(t + dur + 0.05);
+  activeNodes.add(o); o.onended = () => activeNodes.delete(o);
+}
+function noise(dur, vol, hp) {
+  const ac = audio(); if (!ac || vol <= 0) return;
+  const buf = ac.createBuffer(1, ac.sampleRate * dur, ac.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+  const src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = buf; f.type = "highpass"; f.frequency.value = hp; g.gain.value = 0.4 * vol;
+  src.connect(f).connect(g).connect(ac.destination); src.start();
+  activeNodes.add(src); src.onended = () => activeNodes.delete(src);
+}
+const SOUNDS = {
+  "喵": [0.55, (v) => tone([600, 820, 520], 0.55, "triangle", v, false)],
+  "啵": [0.15, (v) => tone([700, 140], 0.15, "sine", v, true)],
+  "嗶": [0.3, (v) => tone([880], 0.3, "square", v * 0.5, false)],
+  "鼓聲": [0.3, (v) => { tone([160, 50], 0.3, "sine", v, true); noise(0.15, v * 0.5, 800); }],
+};
+const INSTR_WAVE = [["triangle", true], ["square", false], ["sine", false], ["sawtooth", true], ["sine", false], ["triangle", true]];
+const DRUM_SYNTH = [(v) => noise(0.2, v, 1200), (v) => tone([150, 40], 0.3, "sine", v * 1.5, true), (v) => noise(0.5, v * 0.7, 5000), (v) => noise(0.08, v, 1500)];
+
+// ===== 6. 執行環境（模擬 Scratch 的舞台與角色） =====
+const STOP_ALL = { stop:"all" }, STOP_THREAD = { stop:"thread" };
+const FPS = 30, MAX_FRAMES = 600; // 評分時最多模擬 20 秒
+const N = (v) => { if (typeof v === "number") return isNaN(v) ? 0 : v; const n = Number(v); return isNaN(n) ? 0 : n; };
+const wrapDir = (d) => ((d + 179) % 360 + 360) % 360 - 179;  // 方向保持在 -179 ~ 180
+
+class Sprite {
+  constructor(from) {
+    Object.assign(this, { x:0, y:0, dir:90, costume:0, size:100, visible:true, rot:"all around",
+      effects:{ color:0, brightness:0, ghost:0 }, pen:{ down:false, h:66.66, s:100, v:100, t:0, size:1 }, bubble:null, isClone:false, deleted:false });
+    if (from) {
+      Object.assign(this, from, { effects:{ ...from.effects }, pen:{ ...from.pen }, bubble:null, isClone:true, deleted:false });
+    }
+  }
+}
+
+class VM {
+  constructor(opts = {}) {
+    this.headless = !!opts.headless;
+    this.autoAnswers = opts.inputs || null;   // 依序給「詢問並等待」的值
+    this.pen = mkCanvas(480, 360); this.penCtx = this.pen.getContext("2d");
+    this.STOP_ALL = STOP_ALL;
+    this.N = N;
+    this.reset();
+  }
+  reset() {
+    this.sprites = [new Sprite()];
+    this.threads = []; this.program = null;
+    this.backdrop = 0; this.now = 0; this.timerBase = 0;
+    this.vars = {}; this.lists = {}; this.names = {}; this.shown = {};
+    this.out = []; this.penSegs = []; this.notes = [];
+    this.answer = ""; this.asking = false;
+    this.mouse = { x:0, y:0, down:false }; this.keys = new Set();
+    this.volume = 100; this.tempo = 60; this.instrument = 0;
+    this.seed = 20240901; this.redraw = true; this.frameOps = 0; this.error = null; this.timedOut = false;
+    this.penCtx.clearRect(0, 0, 480, 360);
+  }
+  get original() { return this.sprites.find(s => !s.isClone) || this.sprites[0]; }
+
+  load(compiled, keepValues) {
+    this.program = compiled.factory(this);
+    for (const v of compiled.variables) {
+      this.names[v.id] = v.name;
+      if (v.type === "list") { if (!keepValues || !Array.isArray(this.lists[v.id])) this.lists[v.id] = []; }
+      else if (!keepValues || !(v.id in this.vars)) this.vars[v.id] = 0;
+    }
+  }
+
+  // ----- 執行緒排程 -----
+  spawn(target, fn, key) {
+    for (const t of this.threads) if (t.key === key && t.target === target) t.done = true; // 同一個程式再觸發就重新開始
+    const th = { target, gen:fn(target), key, done:false };
+    this.threads.push(th);
+    return th;
+  }
+  greenFlag() {
+    this.stopAll();
+    this.timerBase = this.now;
+    this.program.flag.forEach((f, i) => this.spawn(this.original, f, "flag" + i));
+  }
+  fireKey(key) {
+    if (!this.program) return;
+    this.program.key.forEach((h, i) => { if (h.k === key || h.k === "any") this.sprites.forEach(s => this.spawn(s, h.f, "key" + i)); });
+  }
+  fireClick(sprite) { if (this.program) this.program.click.forEach((f, i) => this.spawn(sprite, f, "click" + i)); }
+  broadcast(name) {
+    const started = [];
+    this.program.msg.forEach((h, i) => { if (h.m === String(name)) this.sprites.slice().forEach(s => started.push(this.spawn(s, h.f, "msg" + i))); });
+    return started;
+  }
+  *broadcastWait(name) { const ths = this.broadcast(name); do { yield 1; } while (ths.some(t => !t.done)); }
+  stopAll() {
+    this.threads.forEach(t => t.done = true); this.threads = [];
+    this.sprites = this.sprites.filter(s => !s.isClone);
+    this.sprites.forEach(s => s.bubble = null);
+    this.asking = false; this.stopSounds(); this.redraw = true;
+    if (this.onAsk) this.onAsk(null);
+  }
+  stopOthers(T) { this.threads.forEach(t => { if (t.target === T && t !== this.cur) t.done = true; }); }
+  frame() {
+    this.redraw = false; this.frameOps = 0; this.sliceStart = performance.now();
+    for (let round = 0; round < 500; round++) {
+      let progressed = false;
+      for (const th of this.threads.slice()) {
+        if (th.done || th.target.deleted) { th.done = true; continue; }
+        this.cur = th;
+        let r;
+        try { r = th.gen.next(); }
+        catch (e) {
+          th.done = true;
+          if (e === STOP_THREAD) continue;
+          if (e === STOP_ALL) { this.stopAll(); return; }
+          this.fail(e); return;
+        }
+        if (r.done) th.done = true; else if (r.value === 0) progressed = true;
+      }
+      this.threads = this.threads.filter(t => !t.done);
+      if (!progressed || this.pauseForRedraw() || this.sliceOver()) break;
+    }
+  }
+  // 評分時不用等畫面更新，迴圈一次跑完比較快；「等待」「滑行」等仍照模擬時間進行
+  pauseForRedraw() { return this.redraw && !this.headless; }
+  sliceOver() { return this.headless ? this.frameOps > 400 : performance.now() - this.sliceStart > 12; }
+  yc() { this.frameOps++; return this.pauseForRedraw() || this.sliceOver(); }  // 迴圈尾端：畫面有變或這一格時間用完就暫停
+  fail(e) {
+    this.error = e instanceof RangeError ? "程式呼叫太多層（可能是遞迴沒有停止條件）" : (e && e.message) || String(e);
+    this.threads = []; this.asking = false; if (this.onAsk) this.onAsk(null);
+    if (this.onError) this.onError(this.error);
+  }
+  *waitSecs(secs) { const end = this.now + N(secs); do { yield 1; } while (this.now < end); }
+
+  // ----- Scratch 的型別規則 -----
+  B(v) { return !(v === false || v === 0 || v === "" || v == null || v === "0" || String(v).toLowerCase() === "false"); }
+  C(a, b) {
+    const na = Number(a), nb = Number(b);
+    if (String(a).trim() !== "" && String(b).trim() !== "" && !isNaN(na) && !isNaN(nb)) return na - nb;
+    const sa = String(a).toLowerCase(), sb = String(b).toLowerCase();
+    return sa < sb ? -1 : sa > sb ? 1 : 0;
+  }
+  mod(a, b) { a = N(a); b = N(b); let r = a % b; if (r !== 0 && (r < 0) !== (b < 0)) r += b; return r; }
+  rand() { this.seed = (this.seed + 0x6D2B79F5) | 0; let t = this.seed; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }
+  random(a, b) {
+    const lo = Math.min(N(a), N(b)), hi = Math.max(N(a), N(b));
+    const isInt = (v) => Number.isInteger(N(v)) && !String(v).includes(".");
+    return isInt(a) && isInt(b) ? lo + Math.floor(this.rand() * (hi - lo + 1)) : lo + this.rand() * (hi - lo);
+  }
+  letterOf(s, i) { s = String(s); i = Math.floor(N(i)); return i >= 1 && i <= s.length ? s[i - 1] : ""; }
+  contains(a, b) { return String(a).toLowerCase().includes(String(b).toLowerCase()); }
+  mathop(op, x) {
+    x = N(x); const rad = x * Math.PI / 180, r10 = (v) => Math.round(v * 1e10) / 1e10;
+    switch (op) {
+      case "abs": return Math.abs(x); case "floor": return Math.floor(x); case "ceiling": return Math.ceil(x); case "sqrt": return Math.sqrt(x);
+      case "sin": return r10(Math.sin(rad)); case "cos": return r10(Math.cos(rad));
+      case "tan": { const m = ((x % 360) + 360) % 360; return m === 90 ? Infinity : m === 270 ? -Infinity : r10(Math.tan(rad)); }
+      case "asin": return Math.asin(x) * 180 / Math.PI; case "acos": return Math.acos(x) * 180 / Math.PI; case "atan": return Math.atan(x) * 180 / Math.PI;
+      case "ln": return Math.log(x); case "log": return Math.log10(x); case "e ^": return Math.exp(x); case "10 ^": return Math.pow(10, x);
+    }
+    return 0;
+  }
+  lim(v) { const r = Math.round(v); return Math.abs(v - r) < 1e-9 ? r : v; }
+
+  // ----- 動作 -----
+  bounds(T) {
+    const c = COSTUMES[T.costume], k = T.size / 100;
+    const a = T.rot === "all around" ? (T.dir - 90) * Math.PI / 180 : 0, flip = T.rot === "left-right" && T.dir < 0 ? -1 : 1;
+    const cos = Math.cos(a), sin = Math.sin(a);
+    let l = Infinity, r = -Infinity, t = -Infinity, bo = Infinity;
+    for (const [px, py] of [[-c.cx, -c.cy], [c.w - c.cx, -c.cy], [c.w - c.cx, c.h - c.cy], [-c.cx, c.h - c.cy]]) {
+      const x = px * k * flip, y = py * k;
+      const sx = T.x + (x * cos - y * sin), sy = T.y - (x * sin + y * cos);
+      l = Math.min(l, sx); r = Math.max(r, sx); t = Math.max(t, sy); bo = Math.min(bo, sy);
+    }
+    return { left:l, right:r, top:t, bottom:bo };
+  }
+  fence(T, x, y) {  // 跟 Scratch 一樣：角色不能完全跑出舞台
+    const b = this.bounds(Object.assign(Object.create(Sprite.prototype), T, { x, y }));
+    const inset = Math.floor(Math.min(15, (b.right - b.left) / 2, (b.top - b.bottom) / 2));
+    if (b.right < -240 + inset) x += -240 + inset - b.right;
+    if (b.left > 240 - inset) x -= b.left - (240 - inset);
+    if (b.top < -180 + inset) y += -180 + inset - b.top;
+    if (b.bottom > 180 - inset) y -= b.bottom - (180 - inset);
+    return [x, y];
+  }
+  setXY(T, x, y, noFence) {
+    x = N(x); y = N(y);
+    if (!noFence) [x, y] = this.fence(T, x, y);
+    if (T.pen.down && (x !== T.x || y !== T.y)) this.penLine(T, T.x, T.y, x, y);
+    T.x = x; T.y = y;
+    if (T.visible || T.pen.down) this.redraw = true;
+  }
+  move(T, steps) { steps = N(steps); const r = (90 - T.dir) * Math.PI / 180; this.setXY(T, T.x + steps * Math.cos(r), T.y + steps * Math.sin(r)); }
+  turn(T, d) { this.setDir(T, T.dir + d); }
+  setDir(T, d) { d = N(d); if (!isFinite(d)) return; T.dir = wrapDir(d); if (T.visible) this.redraw = true; }
+  goTo(T, to) {
+    if (to === "mouse") this.setXY(T, this.mouse.x, this.mouse.y);
+    else this.setXY(T, Math.round(this.rand() * 480 - 240), Math.round(this.rand() * 360 - 180));
+  }
+  *glide(T, secs, x, y) {
+    secs = N(secs); x = N(x); y = N(y);
+    const sx = T.x, sy = T.y, t0 = this.now;
+    if (secs <= 0) { this.setXY(T, x, y); return; }
+    while (true) {
+      const f = Math.min(1, (this.now - t0) / secs);
+      this.setXY(T, sx + (x - sx) * f, sy + (y - sy) * f);
+      if (f >= 1) return;
+      yield 1;
+    }
+  }
+  *glideTo(T, secs, to) {
+    const [x, y] = to === "mouse" ? [this.mouse.x, this.mouse.y] : [Math.round(this.rand() * 480 - 240), Math.round(this.rand() * 360 - 180)];
+    yield* this.glide(T, secs, x, y);
+  }
+  pointTowards(T) { const dx = this.mouse.x - T.x, dy = this.mouse.y - T.y; if (dx || dy) this.setDir(T, 90 - Math.atan2(dy, dx) * 180 / Math.PI); }
+  bounce(T) {
+    const b = this.bounds(T);
+    const dist = { left: b.left + 240, top: 180 - b.top, right: 240 - b.right, bottom: b.bottom + 180 };
+    let near = "left"; for (const k in dist) if (dist[k] < dist[near]) near = k;
+    if (dist[near] > 0) return;
+    const r = (90 - T.dir) * Math.PI / 180;
+    let dx = Math.cos(r), dy = Math.sin(r);
+    if (near === "left") dx = Math.max(0.2, Math.abs(dx));
+    else if (near === "top") dy = -Math.max(0.2, Math.abs(dy));
+    else if (near === "right") dx = -Math.max(0.2, Math.abs(dx));
+    else dy = Math.max(0.2, Math.abs(dy));
+    T.dir = wrapDir(90 - Math.atan2(dy, dx) * 180 / Math.PI);
+    const nb = this.bounds(T);
+    let fx = 0, fy = 0;
+    if (nb.left < -240) fx = -240 - nb.left; if (nb.right > 240) fx = 240 - nb.right;
+    if (nb.top > 180) fy = 180 - nb.top; if (nb.bottom < -180) fy = -180 - nb.bottom;
+    this.setXY(T, T.x + fx, T.y + fy);
+  }
+  setRotStyle(T, s) { T.rot = s; this.redraw = true; }
+
+  // ----- 外觀 -----
+  say(T, v, type) {
+    const text = typeof v === "number" ? String(this.lim(v)) : String(v);
+    T.bubble = text === "" ? null : { type, text };
+    if (type === "say" && text !== "") {
+      if (this.out.length >= 2000) throw new Error("說出太多次");
+      this.out.push(text);
+    }
+    this.redraw = true;
+  }
+  *sayFor(T, v, secs, type) {
+    this.say(T, v, type); const b = T.bubble;
+    yield* this.waitSecs(secs);
+    if (T.bubble === b) { T.bubble = null; this.redraw = true; }
+  }
+  pick(list, v, cur) {
+    const i = list.indexOf(String(v));
+    if (i >= 0) return i;
+    const n = Math.round(N(v));
+    return String(v).trim() !== "" && !isNaN(Number(v)) ? ((n - 1) % list.length + list.length) % list.length : cur;
+  }
+  setCostume(T, v) { T.costume = this.pick(COSTUME_NAMES, v, T.costume); if (T.visible) this.redraw = true; }
+  setBackdrop(v) { this.backdrop = this.pick(BACKDROP_NAMES, v, this.backdrop); this.redraw = true; }
+  setSize(T, s) { T.size = Math.max(5, Math.min(500, N(s))); if (T.visible) this.redraw = true; }
+  setEffect(T, e, v) {
+    v = N(v);
+    T.effects[e] = e === "ghost" ? Math.max(0, Math.min(100, v)) : e === "brightness" ? Math.max(-100, Math.min(100, v)) : v;
+    if (T.visible) this.redraw = true;
+  }
+  clearEffects(T) { T.effects = { color:0, brightness:0, ghost:0 }; this.redraw = true; }
+  setVisible(T, v) { T.visible = v; this.redraw = true; }
+  layer(T, where) { const i = this.sprites.indexOf(T); this.sprites.splice(i, 1); where === "front" ? this.sprites.push(T) : this.sprites.unshift(T); this.redraw = true; }
+  costumeInfo(T, k) { return k === "name" ? COSTUME_NAMES[T.costume] : T.costume + 1; }
+  backdropInfo(k) { return k === "name" ? BACKDROP_NAMES[this.backdrop] : this.backdrop + 1; }
+
+  // ----- 聲音與音樂（評分時只記錄、不發聲） -----
+  setVolume(v) { this.volume = Math.max(0, Math.min(100, N(v))); }
+  *playSound(name, untilDone) {
+    const s = SOUNDS[name]; if (!s) return;
+    if (!this.headless) s[1](this.volume / 100);
+    if (untilDone) yield* this.waitSecs(s[0]);
+  }
+  stopSounds() { if (!this.headless) activeNodes.forEach(n => { try { n.stop(); } catch (e) {} }); }
+  setTempo(t) { this.tempo = Math.max(20, Math.min(500, N(t))); }
+  beatsToSecs(b) { return Math.max(0, Math.min(100, N(b))) * 60 / this.tempo; }
+  *playNote(note, beats) {
+    note = Math.max(0, Math.min(130, N(note))); beats = Math.max(0, Math.min(100, N(beats)));
+    if (this.notes.length < 5000) this.notes.push({ note:Math.round(note * 100) / 100, beats:Math.round(beats * 1000) / 1000 });
+    const secs = this.beatsToSecs(beats);
+    if (!this.headless && secs > 0) { const [w, d] = INSTR_WAVE[this.instrument] || INSTR_WAVE[0]; tone([440 * Math.pow(2, (note - 69) / 12)], secs, w, this.volume / 100, d); }
+    yield* this.waitSecs(secs);
+  }
+  *rest(beats) { yield* this.waitSecs(this.beatsToSecs(beats)); }
+  *drum(name, beats) {
+    const i = DRUMS.indexOf(name);
+    if (!this.headless && i >= 0) DRUM_SYNTH[i](this.volume / 100);
+    yield* this.waitSecs(this.beatsToSecs(beats));
+  }
+
+  // ----- 事件與控制 -----
+  clone(T) {
+    if (this.sprites.filter(s => s.isClone).length >= 300) return;
+    const c = new Sprite(T);
+    this.sprites.splice(this.sprites.indexOf(T), 0, c);
+    this.program.clone.forEach((f, i) => this.spawn(c, f, "clone" + i));
+    this.redraw = true;
+  }
+  deleteClone(T) {
+    if (!T.isClone) return;
+    T.deleted = true; this.sprites = this.sprites.filter(s => s !== T); this.redraw = true;
+    throw STOP_THREAD;
+  }
+
+  // ----- 偵測 -----
+  *ask(T, q) {
+    while (this.asking) yield 1;
+    if (this.autoAnswers) { this.answer = this.autoAnswers.length ? this.autoAnswers.shift() : ""; return; }
+    if (this.headless) { this.answer = ""; return; }
+    const text = String(q);
+    const bubble = T.visible && text !== "" ? { type:"say", text } : null;
+    if (bubble) T.bubble = bubble;
+    this.asking = true; this.redraw = true;
+    if (this.onAsk) this.onAsk(bubble ? "" : text);
+    while (this.asking) yield 1;
+    if (T.bubble === bubble) T.bubble = null;
+    this.redraw = true;
+  }
+  submitAnswer(v) { this.answer = v; this.asking = false; if (this.onAsk) this.onAsk(null); }
+  touching(T, what) {
+    const b = this.bounds(T);
+    if (what === "edge") return b.left < -240 || b.right > 240 || b.top > 180 || b.bottom < -180;
+    return !this.headless && this.mouse.x >= b.left && this.mouse.x <= b.right && this.mouse.y >= b.bottom && this.mouse.y <= b.top && T.visible;
+  }
+  touchingColor(T, hex) {
+    const b = this.bounds(T);
+    const x0 = Math.max(0, Math.floor(240 + b.left)), x1 = Math.min(480, Math.ceil(240 + b.right));
+    const y0 = Math.max(0, Math.floor(180 - b.top)), y1 = Math.min(360, Math.ceil(180 - b.bottom));
+    const w = x1 - x0, h = y1 - y0;
+    if (w <= 0 || h <= 0) return false;
+    const sc = mkCanvas(w, h), sg = sc.getContext("2d");
+    sg.translate(-x0, -y0); drawSprite(sg, T, true);
+    const mask = sg.getImageData(0, 0, w, h).data;
+    const bc = mkCanvas(w, h), bg = bc.getContext("2d");
+    bg.drawImage(backdropCache[this.backdrop], -x0, -y0); bg.drawImage(this.pen, -x0, -y0);
+    const img = bg.getImageData(0, 0, w, h).data;
+    const tr = parseInt(hex.slice(1, 3), 16), tg = parseInt(hex.slice(3, 5), 16), tb = parseInt(hex.slice(5, 7), 16);
+    for (let i = 0; i < mask.length; i += 4)
+      if (mask[i + 3] > 128 && Math.abs(img[i] - tr) <= 8 && Math.abs(img[i + 1] - tg) <= 8 && Math.abs(img[i + 2] - tb) <= 12) return true;
+    return false;
+  }
+  distanceToMouse(T) { return Math.hypot(T.x - this.mouse.x, T.y - this.mouse.y); }
+  keyDown(k) { return k === "any" ? this.keys.size > 0 : this.keys.has(k); }
+  timer() { return Math.round((this.now - this.timerBase) * 1000) / 1000; }
+  resetTimer() { this.timerBase = this.now; }
+  current(k) {
+    const d = new Date();
+    return { YEAR:d.getFullYear(), MONTH:d.getMonth() + 1, DATE:d.getDate(), DAYOFWEEK:d.getDay() + 1, HOUR:d.getHours(), MINUTE:d.getMinutes(), SECOND:d.getSeconds() }[k];
+  }
+
+  // ----- 變數與清單 -----
+  showMon(id, on) { this.shown[id] = on; this.redraw = true; }
+  list(id) { return this.lists[id] || (this.lists[id] = []); }
+  idx(v, len) {
+    const s = String(v).trim();
+    if (s === "last" || s === "最後") return len;
+    if (s === "random" || s === "隨機") return len ? 1 + Math.floor(this.rand() * len) : 0;
+    return Math.floor(N(v));
+  }
+  listText(id) { const l = this.list(id); return l.every(x => String(x).length === 1) ? l.join("") : l.join(" "); }
+  listAdd(id, v) { const l = this.list(id); if (l.length < 200000) l.push(v); }
+  listDelete(id, i) { const l = this.list(id); if (String(i) === "all" || String(i) === "全部") { l.length = 0; return; } i = this.idx(i, l.length); if (i >= 1 && i <= l.length) l.splice(i - 1, 1); }
+  listClear(id) { this.list(id).length = 0; }
+  listInsert(id, i, v) { const l = this.list(id); i = this.idx(i, l.length + 1); if (i >= 1 && i <= l.length + 1) l.splice(i - 1, 0, v); }
+  listReplace(id, i, v) { const l = this.list(id); i = this.idx(i, l.length); if (i >= 1 && i <= l.length) l[i - 1] = v; }
+  listItem(id, i) { const l = this.list(id); i = this.idx(i, l.length); return i >= 1 && i <= l.length ? l[i - 1] : ""; }
+  listIndexOf(id, v) { const l = this.list(id); for (let i = 0; i < l.length; i++) if (this.C(l[i], v) === 0) return i + 1; return 0; }
+
+  // ----- 畫筆 -----
+  penCss(T) {
+    const { h, s, v, t } = T.pen, H = ((h % 100) + 100) % 100 * 3.6, S = s / 100, Vv = v / 100;
+    const f = (n) => { const k = (n + H / 60) % 6; return Vv - Vv * S * Math.max(0, Math.min(k, 4 - k, 1)); };
+    return `rgba(${Math.round(f(5) * 255)},${Math.round(f(3) * 255)},${Math.round(f(1) * 255)},${1 - t / 100})`;
+  }
+  penLine(T, x1, y1, x2, y2) {
+    const g = this.penCtx;
+    g.strokeStyle = this.penCss(T); g.lineWidth = T.pen.size; g.lineCap = "round";
+    g.beginPath(); g.moveTo(240 + x1, 180 - y1); g.lineTo(240 + x2, 180 - y2); g.stroke();
+    if (this.penSegs.length < 50000) this.penSegs.push([x1, y1, x2, y2]);
+  }
+  penDown(T, on) {
+    if (on && !T.pen.down) { T.pen.down = true; this.penLine(T, T.x, T.y, T.x, T.y); }
+    T.pen.down = on; this.redraw = true;
+  }
+  penClear() { this.penCtx.clearRect(0, 0, 480, 360); this.penSegs = []; this.redraw = true; }
+  stamp(T) { drawSprite(this.penCtx, T); this.redraw = true; }
+  penColor(T, hex) {
+    const r = parseInt(hex.slice(1, 3), 16) / 255, g = parseInt(hex.slice(3, 5), 16) / 255, b = parseInt(hex.slice(5, 7), 16) / 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+    let h = 0;
+    if (d) h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    Object.assign(T.pen, { h:((h * 60 + 360) % 360) / 3.6, s:mx ? d / mx * 100 : 0, v:mx * 100, t:0 });
+  }
+  penParam(T, p, v, change) {
+    v = N(v);
+    const key = { color:"h", brightness:"v", transparency:"t" }[p];
+    let nv = change ? T.pen[key] + v : v;
+    T.pen[key] = key === "h" ? ((nv % 100) + 100) % 100 : Math.max(0, Math.min(100, nv));
+  }
+  penSize(T, s) { T.pen.size = Math.max(1, Math.min(1200, N(s))); }
+}
+
+// 畫角色（含造型、方向、尺寸、圖像效果）
+function drawSprite(g, s, maskOnly) {
+  const c = COSTUMES[s.costume], k = s.size / 100;
+  g.save();
+  g.translate(240 + s.x, 180 - s.y);
+  if (s.rot === "all around") g.rotate((s.dir - 90) * Math.PI / 180);
+  else if (s.rot === "left-right" && s.dir < 0) g.scale(-1, 1);
+  g.scale(k, k);
+  if (!maskOnly) {
+    g.globalAlpha = 1 - s.effects.ghost / 100;
+    const f = [];
+    if (s.effects.color) f.push(`hue-rotate(${(s.effects.color * 1.8) % 360}deg)`);
+    if (s.effects.brightness) f.push(`brightness(${1 + s.effects.brightness / 100})`);
+    if (f.length) g.filter = f.join(" ");
+  }
+  g.drawImage(c.canvas, -c.cx, -c.cy, c.w, c.h);
+  g.restore();
+}
+// ===== 7. Blockly 工作區 =====
+class ScratchCategory extends Blockly.ToolboxCategory {
+  addColourBorder_() {}
+  createIconDom_() {
+    const dot = document.createElement("div");
+    dot.className = "scratchCatDot";
+    dot.style.background = this.colour_;
+    return dot;
+  }
+  setSelected(isSelected) {
+    super.setSelected(isSelected);
+    this.rowDiv_.style.backgroundColor = "";
+    this.rowDiv_.classList.toggle("scratchSelected", isSelected);
+  }
+}
+Blockly.registry.register(Blockly.registry.Type.TOOLBOX_ITEM, Blockly.ToolboxCategory.registrationName, ScratchCategory, true);
+
+const num = (v) => ({ shadow:{ type:"math_number", fields:{ NUM:v } } });
+const txt = (v) => ({ shadow:{ type:"scratch_text", fields:{ TEXT:String(v) } } });
+const B = (type, inputs) => inputs ? { kind:"block", type, inputs } : { kind:"block", type };
+const toolbox = { kind:"categoryToolbox", contents:[
+  { kind:"category", name:"動作", colour:"#4C97FF", contents:[
+    B("motion_movesteps", { STEPS:num(10) }), B("motion_turnright", { DEGREES:num(15) }), B("motion_turnleft", { DEGREES:num(15) }),
+    B("motion_goto"), B("motion_gotoxy", { X:num(0), Y:num(0) }), B("motion_glideto", { SECS:num(1) }),
+    B("motion_glidesecstoxy", { SECS:num(1), X:num(0), Y:num(0) }), B("motion_pointindirection", { DIRECTION:num(90) }), B("motion_pointtowards"),
+    B("motion_changexby", { DX:num(10) }), B("motion_setx", { X:num(0) }), B("motion_changeyby", { DY:num(10) }), B("motion_sety", { Y:num(0) }),
+    B("motion_ifonedgebounce"), B("motion_setrotationstyle"), B("motion_xposition"), B("motion_yposition"), B("motion_direction") ] },
+  { kind:"category", name:"外觀", colour:"#9966FF", contents:[
+    B("looks_sayforsecs", { MESSAGE:txt("哈囉！"), SECS:num(2) }), B("looks_say", { MESSAGE:txt("哈囉！") }),
+    B("looks_thinkforsecs", { MESSAGE:txt("嗯……"), SECS:num(2) }), B("looks_think", { MESSAGE:txt("嗯……") }),
+    B("looks_switchcostumeto"), B("looks_nextcostume"), B("looks_switchbackdropto"), B("looks_nextbackdrop"),
+    B("looks_changesizeby", { CHANGE:num(10) }), B("looks_setsizeto", { SIZE:num(100) }),
+    B("looks_changeeffectby", { CHANGE:num(25) }), B("looks_seteffectto", { VALUE:num(0) }), B("looks_cleargraphiceffects"),
+    B("looks_show"), B("looks_hide"), B("looks_gotofrontback"), B("looks_costumenumbername"), B("looks_backdropnumbername"), B("looks_size") ] },
+  { kind:"category", name:"音效", colour:"#CF63CF", contents:[
+    B("sound_playuntildone"), B("sound_play"), B("sound_stopallsounds"),
+    B("sound_changevolumeby", { VOLUME:num(-10) }), B("sound_setvolumeto", { VOLUME:num(100) }), B("sound_volume") ] },
+  { kind:"category", name:"事件", colour:"#FFBF00", contents:[
+    B("event_whenflagclicked"), B("event_whenkeypressed"), B("event_whenthisspriteclicked"),
+    B("event_whenbroadcastreceived"), B("event_broadcast"), B("event_broadcastandwait") ] },
+  { kind:"category", name:"控制", colour:"#FFAB19", contents:[
+    B("control_wait", { DURATION:num(1) }), B("control_repeat", { TIMES:num(10) }), B("control_forever"),
+    B("control_if"), B("control_if_else"), B("control_wait_until"), B("control_repeat_until"), B("control_stop"),
+    B("control_start_as_clone"), B("control_create_clone_of"), B("control_delete_this_clone") ] },
+  { kind:"category", name:"偵測", colour:"#5CB1D6", contents:[
+    B("sensing_touchingobject"), B("sensing_touchingcolor"), B("sensing_distanceto"),
+    B("sensing_askandwait", { QUESTION:txt("你叫什麼名字？") }), B("sensing_answer"),
+    B("sensing_keypressed"), B("sensing_mousedown"), B("sensing_mousex"), B("sensing_mousey"),
+    B("sensing_timer"), B("sensing_resettimer"), B("sensing_current") ] },
+  { kind:"category", name:"運算", colour:"#59C059", contents:[
+    B("operator_add", { NUM1:txt(""), NUM2:txt("") }), B("operator_subtract", { NUM1:txt(""), NUM2:txt("") }),
+    B("operator_multiply", { NUM1:txt(""), NUM2:txt("") }), B("operator_divide", { NUM1:txt(""), NUM2:txt("") }),
+    B("operator_random", { FROM:num(1), TO:num(10) }),
+    B("operator_gt", { OPERAND1:txt(""), OPERAND2:txt("50") }), B("operator_lt", { OPERAND1:txt(""), OPERAND2:txt("50") }),
+    B("operator_equals", { OPERAND1:txt(""), OPERAND2:txt("50") }),
+    B("operator_and"), B("operator_or"), B("operator_not"),
+    B("operator_join", { STRING1:txt("apple "), STRING2:txt("banana") }), B("operator_letter_of", { STRING:txt("apple"), LETTER:num(1) }),
+    B("operator_length", { STRING:txt("apple") }), B("operator_contains", { STRING1:txt("apple"), STRING2:txt("a") }),
+    B("operator_mod", { NUM1:txt(""), NUM2:txt("") }), B("operator_round", { NUM:txt("") }), B("operator_mathop", { NUM:txt("") }) ] },
+  { kind:"category", name:"變數", colour:"#FF8C1A", custom:"SCRATCH_VARIABLE" },
+  { kind:"category", name:"我的積木", colour:"#FF6680", custom:"SCRATCH_PROCEDURE" },
+  { kind:"category", name:"畫筆", colour:"#0FBD8C", contents:[
+    B("pen_clear"), B("pen_stamp"), B("pen_pendown"), B("pen_penup"), B("pen_setpencolortocolor"),
+    B("pen_changepencolorparamby", { VALUE:num(10) }), B("pen_setpencolorparamto", { VALUE:num(50) }),
+    B("pen_changepensizeby", { SIZE:num(1) }), B("pen_setpensizeto", { SIZE:num(1) }) ] },
+  { kind:"category", name:"音樂", colour:"#0FBD8C", contents:[
+    B("music_playDrumForBeats", { BEATS:num(0.25) }), B("music_restForBeats", { BEATS:num(0.25) }),
+    B("music_playNoteForBeats", { NOTE:num(60), BEATS:num(0.25) }), B("music_setInstrument"),
+    B("music_setTempo", { TEMPO:num(60) }), B("music_changeTempo", { TEMPO:num(20) }), B("music_getTempo") ] },
+]};
+
+const ws = Blockly.inject("blocklyDiv", {
+  toolbox, theme:scratchTheme, renderer:"zelos", trashcan:true,
+  zoom:{ controls:true, wheel:true, startScale:0.65 },
+  grid:{ spacing:40, length:2, colour:"#dddddd", snap:false },
+});
+
+// 變數分類：建立變數／清單按鈕 + 相關積木
+ws.registerToolboxCategoryCallback("SCRATCH_VARIABLE", (w) => {
+  const vars = w.getVariablesOfType(""), lists = w.getVariablesOfType("list");
+  const items = [{ kind:"button", text:"建立一個變數", callbackkey:"CREATE_VARIABLE" }];
+  vars.forEach(v => items.push({ kind:"block", type:"variables_get", fields:{ VAR:{ id:v.getId() } } }));
+  if (vars.length) {
+    const V0 = { id:vars[0].getId() };
+    items.push({ kind:"block", type:"variables_set", fields:{ VAR:V0 }, inputs:{ VALUE:txt("0") } },
+               { kind:"block", type:"math_change", fields:{ VAR:V0 }, inputs:{ DELTA:txt("1") } },
+               { kind:"block", type:"data_showvariable", fields:{ VARIABLE:V0 } },
+               { kind:"block", type:"data_hidevariable", fields:{ VARIABLE:V0 } });
+  }
+  items.push({ kind:"button", text:"建立一個清單", callbackkey:"CREATE_LIST" });
+  lists.forEach(l => items.push({ kind:"block", type:"data_listcontents", fields:{ LIST:{ id:l.getId() } } }));
+  if (lists.length) {
+    const L0 = { LIST:{ id:lists[0].getId() } };
+    const LB = (type, inputs) => ({ kind:"block", type, fields:L0, inputs });
+    items.push(LB("data_addtolist", { ITEM:txt("東西") }), LB("data_deleteoflist", { INDEX:num(1) }), LB("data_deletealloflist"),
+      LB("data_insertatlist", { ITEM:txt("東西"), INDEX:num(1) }), LB("data_replaceitemoflist", { INDEX:num(1), ITEM:txt("東西") }),
+      LB("data_itemoflist", { INDEX:num(1) }), LB("data_itemnumoflist", { ITEM:txt("東西") }), LB("data_lengthoflist"),
+      LB("data_listcontainsitem", { ITEM:txt("東西") }), LB("data_showlist"), LB("data_hidelist"));
+  }
+  return items;
+});
+ws.registerButtonCallback("CREATE_VARIABLE", (btn) => Blockly.Variables.createVariableButtonHandler(btn.getTargetWorkspace()));
+ws.registerButtonCallback("CREATE_LIST", (btn) => {
+  const old = Blockly.Msg.NEW_VARIABLE_TITLE;
+  Blockly.Msg.NEW_VARIABLE_TITLE = "新的清單名稱：";
+  Blockly.Variables.createVariableButtonHandler(btn.getTargetWorkspace(), null, "list");
+  Blockly.Msg.NEW_VARIABLE_TITLE = old;
+});
+
+// 我的積木：建立一個積木（參數用積木上的齒輪新增），下面列出可以使用的自訂積木
+ws.registerToolboxCategoryCallback("SCRATCH_PROCEDURE", (w) => {
+  const items = [{ kind:"button", text:"建立一個積木", callbackkey:"CREATE_PROC" },
+                 { kind:"label", text:"要加參數：點「定義」積木上的齒輪" }];
+  Blockly.Procedures.allProcedures(w)[0].forEach(([name, params]) => {
+    const inputs = {};
+    params.forEach((_, i) => inputs["ARG" + i] = txt(""));
+    items.push({ kind:"block", type:"procedures_callnoreturn", extraState:{ name, params }, inputs });
+  });
+  return items;
+});
+ws.registerButtonCallback("CREATE_PROC", () => {
+  blocklyDialog("prompt", "積木名稱：", "", (name) => {
+    name = (name || "").trim(); if (!name) return;
+    const b = ws.newBlock("procedures_defnoreturn");
+    b.setFieldValue(name, "NAME");
+    b.initSvg(); b.render();
+    const m = ws.getMetrics();
+    b.moveBy(m.viewLeft / ws.scale + 60, m.viewTop / ws.scale + 60);
+    b.select();
+  });
+});
+
+ws.getToolbox().getFlyout().autoClose = false;  // 積木盤拖完積木不自動收起，跟 Scratch 一樣
+new ResizeObserver(() => Blockly.svgResize(ws)).observe($("blocklyDiv"));  // 視窗大小改變時重新排版
+
+// 網頁不用瀏覽器內建的 prompt/confirm，改用自己的對話框
+function blocklyDialog(mode, msg, dflt, cb) {
+  const dlg = $("askDlg"), inp = $("askInput");
+  $("askMsg").textContent = msg;
+  inp.hidden = mode !== "prompt"; inp.value = dflt || "";
+  $("askCancel").hidden = mode === "alert";
+  let finished = false;
+  const done = (ok) => {
+    if (finished) return; finished = true;
+    dlg.close();
+    if (mode === "prompt") cb(ok ? inp.value : null); else if (mode === "confirm") cb(ok); else if (cb) cb();
+  };
+  $("askOk").onclick = () => done(true);
+  $("askCancel").onclick = () => done(false);
+  inp.onkeydown = (e) => { if (e.key === "Enter") done(true); };
+  dlg.oncancel = () => done(false);
+  dlg.showModal();
+  if (mode === "prompt") inp.focus();
+}
+Blockly.dialog.setPrompt((m, d, cb) => blocklyDialog("prompt", m, d, cb));
+Blockly.dialog.setConfirm((m, cb) => blocklyDialog("confirm", m, "", cb));
+Blockly.dialog.setAlert((m, cb) => blocklyDialog("alert", m, "", cb));
+
+// 每題一開始：一個「當綠旗被點擊」+ 預設變數「我的變數」
+function starterState() {
+  return { variables:[{ name:"我的變數", id:Blockly.utils.idGenerator.genUid() }],
+    blocks:{ languageVersion:0, blocks:[{ type:"event_whenflagclicked", x:40, y:40 }] } };
+}
+function loadInto(w, state) { collectMsgs(state); w.clear(); Blockly.serialization.workspaces.load(state, w); }
+
+// ===== 9. 評分：在背景模擬執行，比對說出的內容／畫出的圖形／角色位置／演奏的音符 =====
+const headlessWs = new Blockly.Workspace();
+function runHeadless(state, inputs) {
+  const vm = new VM({ headless:true, inputs:inputs.slice() });
+  try {
+    loadInto(headlessWs, state);
+    const prog = compile(headlessWs);
+    if (!prog.hasFlag) return { error:"請把程式接在「當綠旗被點擊」下面" };
+    vm.load(prog);
+    vm.greenFlag();
+    let f = 0;
+    for (; f < MAX_FRAMES && vm.threads.length && !vm.error; f++) { vm.now = f / FPS; vm.frame(); }
+    vm.timedOut = vm.threads.length > 0;
+  } catch (e) { vm.error = e.message; }
+  const s = vm.original;
+  return { error:vm.error, out:vm.out, pen:vm.penSegs, notes:vm.notes, pos:{ x:vm.lim(s.x), y:vm.lim(s.y), dir:vm.lim(s.dir) }, timedOut:vm.timedOut };
+}
+const inputsOf = (q, t) => q.inputs.map(k => t.in[k]);
+
+// 答案碼：老師的參考程式（JSON 轉 base64）
+function encodeAnswer(state) {
+  const bytes = new TextEncoder().encode(JSON.stringify(state));
+  let bin = ""; bytes.forEach(b => bin += String.fromCharCode(b));
+  return "SB1:" + btoa(bin);
+}
+function decodeAnswer(code) {
+  code = String(code || "").trim();
+  if (!code.startsWith("SB1:")) throw new Error("答案碼格式不對");
+  const bin = atob(code.slice(4)), bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+// 每筆測資的標準答案：試算表有寫就用寫的，沒寫就執行答案碼算出來
+const expectCache = {};
+function expectedFor(q, i) {
+  const key = q.id + "#" + i;
+  if (expectCache[key]) return expectCache[key];
+  const t = q.tests[i];
+  let e;
+  if (t.expect != null && String(t.expect).trim() !== "") e = parseExpect(q.mode, String(t.expect));
+  else if (q.answer) {
+    try {
+      const r = runHeadless(decodeAnswer(q.answer), inputsOf(q, t));
+      e = r.error ? { error:"參考答案執行錯誤：" + r.error } : { out:r.out, pen:r.pen, pos:r.pos, notes:r.notes };
+    } catch (err) { e = { error:"答案碼無法讀取：" + err.message }; }
+  } else e = { error:"這筆測資沒有標準答案，請老師補上" };
+  return expectCache[key] = e;
+}
+function parseExpect(mode, s) {
+  if (mode === "角色位置") {
+    const get = (re) => { const m = s.match(re); return m ? Number(m[1]) : undefined; };
+    return { pos:{ x:get(/x\s*[=:：]\s*(-?[\d.]+)/i), y:get(/y\s*[=:：]\s*(-?[\d.]+)/i), dir:get(/方向\s*[=:：]\s*(-?[\d.]+)/) } };
+  }
+  if (mode === "音符") return { notes: s.split(/[,，\s]+/).filter(Boolean).map(p => { const [n, b] = p.split(/[:：]/); return { note:Number(n), beats: b === undefined ? undefined : Number(b) }; }) };
+  return { out: s.split("|").map(x => x.trim()) };
+}
+
+function rasterize(segs, width) {
+  const c = mkCanvas(480, 360), g = c.getContext("2d");
+  g.lineCap = "round"; g.lineWidth = width; g.strokeStyle = "#000";
+  g.beginPath();
+  for (const [x1, y1, x2, y2] of segs) { g.moveTo(240 + x1, 180 - y1); g.lineTo(240 + x2 + (x1 === x2 && y1 === y2 ? 0.01 : 0), 180 - y2); }
+  g.stroke();
+  return g.getImageData(0, 0, 480, 360).data;
+}
+function penMatch(ref, stu) {
+  const rThin = rasterize(ref, 3), rFat = rasterize(ref, 9), sThin = rasterize(stu, 3), sFat = rasterize(stu, 9);
+  let rc = 0, rh = 0, sc = 0, sx = 0;
+  for (let i = 3; i < rThin.length; i += 4) {
+    if (rThin[i]) { rc++; if (sFat[i]) rh++; }
+    if (sThin[i]) { sc++; if (!rFat[i]) sx++; }
+  }
+  return { cover: rc ? rh / rc : (sc ? 0 : 1), extra: sc ? sx / sc : 0 };
+}
+const dirDiff = (a, b) => Math.abs(((a - b) % 360 + 540) % 360 - 180);
+const fmtPos = (p) => ["x", "y", "dir"].filter(k => p[k] !== undefined).map(k => `${k === "dir" ? "方向" : k}=${Math.round(p[k] * 100) / 100}`).join(", ");
+const fmtNotes = (ns) => ns.length ? ns.slice(0, 24).map(n => n.beats === undefined ? n.note : `${n.note}(${n.beats}拍)`).join(" ") + (ns.length > 24 ? " …" : "") : "（沒有演奏）";
+const normalize = (lines) => lines.map(s => String(s).trim()).join("\n").trim();
+
+function compare(mode, exp, got) {
+  if (mode === "畫筆") {
+    const m = penMatch(exp.pen, got.pen);
+    return { pass: m.cover >= 0.97 && m.extra <= 0.03, exp:"題目的目標圖形", got:`畫出目標的 ${Math.round(m.cover * 100)}%，多畫了 ${Math.round(m.extra * 100)}%` };
+  }
+  if (mode === "角色位置") {
+    const p = exp.pos, g = got.pos;
+    const pass = (p.x === undefined || Math.abs(p.x - g.x) <= 1) && (p.y === undefined || Math.abs(p.y - g.y) <= 1) && (p.dir === undefined || dirDiff(p.dir, g.dir) <= 1);
+    return { pass, exp:fmtPos(p), got:fmtPos({ x:g.x, y:g.y, dir:g.dir }) };
+  }
+  if (mode === "音符") {
+    const e = exp.notes, g = got.notes;
+    const pass = e.length === g.length && e.every((n, i) => Math.abs(n.note - g[i].note) < 0.01 && (n.beats === undefined || Math.abs(n.beats - g[i].beats) < 0.001));
+    return { pass, exp:fmtNotes(e), got:fmtNotes(e.some(n => n.beats !== undefined) ? g : g.map(n => ({ note:n.note }))) };
+  }
+  return { pass: normalize(got.out) === normalize(exp.out), exp:exp.out.join("\n"), got:got.out.join("\n") || "（什麼都沒說）" };
+}
+
+function gradeCurrent(onlyExample) {
+  const q = questions[current];
+  const state = Blockly.serialization.workspaces.save(ws);
+  const idxs = onlyExample ? [0] : q.tests.map((_, i) => i);
+  const rows = idxs.map(i => {
+    const t = q.tests[i], exp = expectedFor(q, i);
+    if (exp.error) return { i, t, pass:false, err:exp.error, hidden:false };
+    const got = runHeadless(state, inputsOf(q, t));
+    if (got.error) return { i, t, pass:false, err:got.error, hidden: !onlyExample && i > 0 };
+    const c = compare(q.mode, exp, got);
+    if (got.timedOut && !c.pass) c.got += "\n（程式 20 秒內沒有結束）";
+    return { i, t, ...c, hidden: !onlyExample && i > 0 };
+  });
+  const passed = rows.filter(r => r.pass).length;
+  const score = Math.round(q.points * passed / rows.length * 10) / 10;
+  return { rows, passed, total:rows.length, score };
+}
+
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+const fmtIn = (o) => Object.entries(o).map(([k, v]) => `${k}=${v}`).join(", ") || "—";
+function showResult(res, isSubmit) {
+  const q = questions[current];
+  const head = { "說出":["應該說出", "你說出"], "畫筆":["目標", "你畫的"], "角色位置":["應該停在", "你的角色"], "音符":["應該演奏", "你演奏"] }[q.mode];
+  let html = `<table><tr><th>#</th><th>輸入</th><th>${head[0]}</th><th>${head[1]}</th><th></th></tr>`;
+  for (const r of res.rows) {
+    const hide = r.hidden;
+    html += `<tr><td>${r.i + 1}</td><td>${hide ? "（隱藏）" : esc(fmtIn(r.t.in))}</td>
+      <td>${hide ? "（隱藏）" : r.err ? "" : `<pre>${esc(r.exp)}</pre>`}</td>
+      <td>${r.err ? `<span class="fail">${esc(r.err)}</span>` : hide ? "" : `<pre>${esc(r.got)}</pre>`}</td>
+      <td class="${r.pass ? "pass" : "fail"}">${r.pass ? "✔" : "✘"}</td></tr>`;
+  }
+  html += `</table>`;
+  if (isSubmit) html = `<p><b>通過 ${res.passed}/${res.total} 筆測資，本題得分 ${res.score} / ${q.points}</b></p>` + html;
+  $("result").innerHTML = html;
+}
+
+// 畫筆題在題目卡上附一張目標圖形（座標格線上畫出範例測資的標準答案），學生照圖寫程式
+function drawTarget() {
+  const c = $("target"), g = c.getContext("2d");
+  const q = questions[current];
+  const e = q && q.mode === "畫筆" ? expectedFor(q, 0) : null;
+  c.hidden = !e || !!e.error;
+  if (c.hidden) return;
+  g.drawImage(backdropCache[1], 0, 0);
+  g.strokeStyle = "#3d4254"; g.lineWidth = 3; g.lineCap = "round";
+  g.beginPath(); e.pen.forEach(([x1, y1, x2, y2]) => { g.moveTo(240 + x1, 180 - y1); g.lineTo(240 + x2 + (x1 === x2 && y1 === y2 ? 0.01 : 0), 180 - y2); }); g.stroke();
+}
+
+// ===== 10. 題目切換 =====
+function renderTabs() {
+  const tabs = $("tabs");
+  tabs.innerHTML = "";
+  questions.forEach((q, i) => {
+    const b = document.createElement("button");
+    b.className = i === current ? "active" : "";
+    b.innerHTML = esc(q.title) + (q.id in scores ? `<span class="score">${scores[q.id]}分</span>` : "");
+    b.onclick = () => switchTo(i);
+    tabs.appendChild(b);
+  });
+}
+function exampleText(q) {
+  const t = q.tests[0], e = expectedFor(q, 0);
+  const ins = q.inputs.length ? `詢問時依序得到：${q.inputs.map(k => `${k} = ${t.in[k]}`).join("，")}\n` : "";
+  if (e.error) return ins + e.error;
+  if (q.mode === "畫筆") return ins + "畫出下面的圖形（角色從 x=0, y=0、面朝 90 度開始）。";
+  if (q.mode === "角色位置") return ins + `讓角色最後停在：${fmtPos(e.pos)}（角色從 x=0, y=0、面朝 90 度開始）`;
+  if (q.mode === "音符") return ins + `依序演奏：${fmtNotes(e.notes)}`;
+  return ins + `應該說出：\n${e.out.join("\n")}`;
+}
+function renderPanel() {
+  const has = questions.length > 0;
+  $("qPanel").hidden = !has;
+  $("empty").hidden = has;
+  $("btnSubmitAll").disabled = !has;
+  if (!has) {
+    const problems = bankProblems.length
+      ? `<p>試算表裡有題目格式不對，所以沒有顯示：</p><ul>${bankProblems.map(p => `<li>${esc(p)}</li>`).join("")}</ul>` : "";
+    $("empty").innerHTML = {
+      loading: "<h2>題庫載入中…</h2>",
+      nourl: "<h2>還沒設定題庫網址</h2><p>請老師依照設定說明，把 Google Apps Script 的網址貼到 index.html 裡的 SCRIPT_URL。</p><p>在這之前，可以先用右邊的積木自由練習。</p>",
+      error: "<h2>題庫讀取失敗</h2><p>請確認網路連線後重新整理頁面。如果一直失敗，請告訴老師。</p>",
+      ready: "<h2>還沒有題目</h2><p>老師還沒有在試算表的「題庫」中勾選啟用題目。</p>" + problems,
+    }[bankState];
+    drawTarget();
+    return;
+  }
+  const q = questions[current];
+  $("qTitle").textContent = `${q.title}（${q.points} 分）`;
+  $("desc").textContent = q.desc;
+  $("example").textContent = exampleText(q);
+  drawTarget();
+}
+function switchTo(i) {
+  if (loadedId) saved[loadedId] = Blockly.serialization.workspaces.save(ws);
+  current = i;
+  const q = questions[i];
+  loadedId = q.id;
+  loadInto(ws, saved[q.id] || starterState());
+  $("result").innerHTML = "";
+  renderPanel();
+  renderTabs();
+}
+
+function copyText(text, textarea, msgEl, okText) {
+  const fallback = () => { textarea.focus(); textarea.select(); msgEl.textContent = "已選取文字，請按 Ctrl+C 複製"; };
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(() => { msgEl.textContent = okText; }, fallback);
+  else fallback();
+}
+
+$("btnRun").onclick = () => {
+  const q = questions[current];
+  showResult(gradeCurrent(true), false);
+};
+$("btnCheck").onclick = () => {
+  const res = gradeCurrent(false);
+  scores[questions[current].id] = res.score;
+  showResult(res, true);
+  renderTabs();
+};
+
+// ===== 11. 學生資料與交卷 =====
+const studentFields = ["studentClass", "studentSeat", "studentName"];
+try {
+  const info = JSON.parse(localStorage.getItem("blockQuizStudent") || "{}");
+  studentFields.forEach(f => { if (info[f]) $(f).value = info[f]; });
+} catch (e) {}
+studentFields.forEach(f => $(f).addEventListener("input", () => {
+  $(f).classList.remove("missing");
+  try { localStorage.setItem("blockQuizStudent", JSON.stringify(Object.fromEntries(studentFields.map(k => [k, $(k).value])))); } catch (e) {}
+}));
+function headMsg(text) { $("headMsg").textContent = text; $("headMsg").hidden = !text; }
+
+// 國中班級是 7～9 年級三位數（例如 701）；常見的誤填是用一～三年級寫成 101～301。座號一律兩位數（01～99）
+function classError(cls) {
+  if (!cls) return "請填寫班級。";
+  if (/^[789](0[1-9]|[1-9]\d)$/.test(cls)) return "";
+  if (/^[123](0[1-9]|[1-9]\d)$/.test(cls)) return `班級輸入錯誤：「${cls}」要輸入 ${Number(cls[0]) + 6}${cls.slice(1)}。`;
+  return `班級輸入錯誤：「${cls}」不是國中班級，請輸入三位數，例如 701、805、912。`;
+}
+function seatError(seat) {
+  if (!seat) return "請填寫座號。";
+  if (/^\d\d$/.test(seat) && seat !== "00") return "";
+  if (/^[1-9]$/.test(seat)) return `座號輸入錯誤：座號要兩位數，「${seat}」要輸入 0${seat}。`;
+  return `座號輸入錯誤：「${seat}」不對，請輸入兩位數字，例如 01、15。`;
+}
+function studentErrors() {
+  const errs = [
+    ["studentClass", classError($("studentClass").value.trim())],
+    ["studentSeat", seatError($("studentSeat").value.trim())],
+    ["studentName", $("studentName").value.trim() ? "" : "請填寫姓名。"],
+  ].filter(e => e[1]);
+  studentFields.forEach(f => $(f).classList.toggle("missing", errs.some(e => e[0] === f)));
+  return errs;
+}
+// 填完班級或座號、離開欄位時就先檢查，不用等到交卷
+["studentClass", "studentSeat"].forEach(f => $(f).addEventListener("change", () => {
+  const err = (f === "studentClass" ? classError : seatError)($(f).value.trim());
+  $(f).classList.toggle("missing", !!err);
+  headMsg(err);
+}));
+
+$("btnSubmitAll").onclick = () => {
+  const cls = $("studentClass").value.trim(), seat = $("studentSeat").value.trim(), name = $("studentName").value.trim();
+  const errs = studentErrors();
+  if (errs.length) {
+    headMsg(errs.map(e => e[1]).join(" ") + " 改正後才能交卷。");
+    $(errs[0][0]).focus();
+    return;
+  }
+  headMsg("");
+
+  saved[loadedId] = Blockly.serialization.workspaces.save(ws);
+  const keep = current;
+  let total = 0, full = 0, rows = "", csv = [];
+  const scoreMap = {};
+  questions.forEach((q, i) => {
+    current = i;
+    loadedId = q.id;
+    loadInto(ws, saved[q.id] || starterState());
+    const res = gradeCurrent(false);
+    scores[q.id] = res.score;
+    scoreMap[q.title] = res.score;
+    total += res.score; full += Number(q.points);
+    rows += `<tr><td>${esc(q.title)}</td><td>${res.passed}/${res.total}</td><td>${res.score} / ${q.points}</td></tr>`;
+    csv.push(res.score);
+  });
+  switchTo(keep); // 此時工作區內容與最後一題的存檔相同，可安全切回
+  total = Math.round(total * 10) / 10;
+  const cell = (s) => /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  $("rCsv").value = `班級,座號,姓名,${questions.map(q => cell(q.title)).join(",")},總分\n${cell(cls)},${seat},${cell(name)},${csv.join(",")},${total}`;
+  $("rMsg").textContent = "";
+  $("report").innerHTML =
+    `<p>班級：<b>${esc(cls)}</b>　座號：<b>${esc(seat)}</b>　姓名：<b>${esc(name)}</b><br>交卷時間：${new Date().toLocaleString()}</p>
+     <table><tr><th>題目</th><th>通過測資</th><th>得分</th></tr>${rows}
+     <tr><th colspan="2">總分</th><th>${total} / ${full}</th></tr></table>`;
+  $("reportDlg").showModal();
+  sendSubmission({ cls, seat, name, total, full, scores:scoreMap });
+};
+
+// 把成績送到 Google 試算表的「成績」工作表（每交一次新增一列）
+async function sendSubmission(record) {
+  const say = (text, ok) => { $("rSend").textContent = text; $("rSend").className = "msg " + (ok ? "ok" : "err"); };
+  if (!SCRIPT_URL) return say("還沒設定成績網址，成績沒有送出，請把下方 CSV 交給老師。", false);
+  say("成績傳送中…", true);
+  $("btnSubmitAll").disabled = true;
+  try {
+    // 用 text/plain 送出，Google Apps Script 才收得到（不會被瀏覽器的跨網域檢查擋下）
+    const res = await fetch(SCRIPT_URL, { method:"POST", headers:{ "Content-Type":"text/plain;charset=utf-8" }, body:JSON.stringify(record) });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "unknown");
+    say("✔ 成績已送給老師。", true);
+  } catch (e) {
+    say("成績沒有送出：請確認網路連線後再按一次「交卷」，或把下方 CSV 交給老師。", false);
+  } finally {
+    $("btnSubmitAll").disabled = false;
+  }
+}
+$("rCopy").onclick = () => copyText($("rCsv").value, $("rCsv"), $("rMsg"), "已複製，可貼到 Excel");
+$("rClose").onclick = () => $("reportDlg").close();
+
+// ===== 12. 老師工具：網址加上 #teacher，可以把參考答案轉成答案碼 =====
+function teacherMode() { $("btnAnswerCode").hidden = location.hash !== "#teacher"; }
+window.addEventListener("hashchange", teacherMode);
+teacherMode();
+const codeMsg = (t, ok) => { $("codeMsg").textContent = t; $("codeMsg").className = "msg " + (ok ? "ok" : "err"); };
+$("btnAnswerCode").onclick = () => {
+  const state = Blockly.serialization.workspaces.save(ws);
+  $("codeText").value = encodeAnswer(state);
+  try { const p = compile(ws); codeMsg(p.hasFlag ? "已產生。答案碼包含目前程式區的所有積木。" : "注意：程式區沒有「當綠旗被點擊」，評分時不會執行。", p.hasFlag); }
+  catch (e) { codeMsg("程式有錯誤：" + e.message, false); }
+  $("codeDlg").showModal();
+};
+$("codeCopy").onclick = () => copyText($("codeText").value, $("codeText"), $("codeMsg"), "已複製，貼到試算表的「答案碼」欄。");
+$("codeLoad").onclick = () => {
+  try { loadInto(ws, decodeAnswer($("codeText").value)); codeMsg("已載入到程式區。", true); }
+  catch (e) { codeMsg("答案碼無法讀取：" + e.message, false); }
+};
+$("codeClose").onclick = () => $("codeDlg").close();
+
+// ===== 13. 啟動：讀取試算表的題庫 =====
+async function loadBank() {
+  if (!SCRIPT_URL) { bankState = "nourl"; renderPanel(); return; }
+  try {
+    const data = await (await fetch(SCRIPT_URL)).json();
+    if (data.error) throw new Error(data.error);
+    bankProblems = data.problems || [];
+    if (bankProblems.length) console.warn("題庫格式問題：", bankProblems);
+    questions = (data.questions || []).map(q => Object.assign({ mode:"說出", answer:"" }, q, {
+      id:q.title,
+      mode: MODES.includes(q.mode) ? q.mode : "說出",
+      tests: q.tests.map(t => ({ in:t.in || {}, expect: t.expect !== undefined ? t.expect : Array.isArray(t.out) ? t.out.join("|") : null })),
+    }));
+    bankState = "ready";
+    if (questions.length) switchTo(0); else renderPanel();
+  } catch (e) {
+    console.error(e);
+    bankState = "error";
+    renderPanel();
+  }
+}
+loadInto(ws, starterState());
+renderPanel();
+ws.getToolbox().selectItemByPosition(0); // 跟 Scratch 一樣，一打開就顯示第一個分類的積木盤
+loadBank();
+</script>
+</body>
+</html>
