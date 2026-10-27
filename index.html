@@ -48,6 +48,9 @@
   #tabs button.active { background:var(--card); font-weight:700; color:var(--strong); }
   #tabs .score { font-size:12px; margin-left:6px; font-variant-numeric:tabular-nums; }
   main { flex:1; display:flex; min-height:0; padding-block:0 16px; gap:12px; }
+  #wsWrap { flex:1; min-width:0; position:relative; display:flex; }
+  #lockLayer { position:absolute; inset:0; background:rgba(233,238,248,.72); display:flex; align-items:center; justify-content:center; border-radius:0 8px 8px 8px; z-index:50; }
+  #lockLayer p { margin:0 16px; padding:14px 18px; background:var(--card); color:var(--strong); border:1px solid var(--line); border-radius:8px; font-weight:700; max-width:360px; text-align:center; line-height:1.6; }
   #blocklyDiv { flex:1; min-width:0; min-height:420px; border-radius:0 8px 8px 8px; overflow:hidden; border:1px solid var(--line); }
   #side { width:clamp(320px, 34vw, 480px); min-width:0; display:flex; flex-direction:column; gap:10px; overflow:auto; }
 
@@ -121,7 +124,10 @@
       </div>
     </section>
   </aside>
-  <div id="blocklyDiv"></div>
+  <div id="wsWrap">
+    <div id="blocklyDiv"></div>
+    <div id="lockLayer" hidden><p id="lockText"></p></div>
+  </div>
 </main>
 
 <dialog id="reportDlg">
@@ -159,7 +165,7 @@
 const $ = (id) => document.getElementById(id);
 
 // ===== 1. 設定：貼上 Google Apps Script 部署後的「網頁應用程式」網址 =====
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGnLP4KYgutJN-Cy_C8KMLy19pRNvWHuEge0wlUozrGLbIEYGi81kaBa4AChKI0gYbfg/exec";  // 例如 "https://script.google.com/macros/s/AKfy.../exec"
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbycTEMOqW6kaV4665w0gFJhOgQjkxM9XnixqmVOTeAqf4O610_Pk2DVpOjawtBijeOtqg/exec";  // 例如 "https://script.google.com/macros/s/AKfy.../exec"
 
 // 題庫從試算表「題庫」工作表讀取。每題 = 說明 + 輸入值（依序給「詢問並等待」）+ 測資 + 配分 + 評分方式 + 答案碼
 let questions = [];
@@ -170,6 +176,11 @@ const scores = {};   // 每題得分
 let bankState = "loading"; // loading | ready | nourl | error
 let bankProblems = [];     // 試算表裡格式有問題的題目
 const MODES = ["說出", "畫筆", "角色位置", "音符"];
+
+// 提交本題後要不要馬上讓學生看到分數：false 只顯示「已提交」，分數等交卷後才公布
+const SHOW_SCORE_AFTER_SUBMIT = false;
+let submitted = {};    // 試算表記錄的已提交題目：{ 題目名稱: { score, points } }
+let handedIn = false;  // 這位學生是否已交卷
 
 // ===== 2. Scratch 外觀：顏色、字型、圖示 =====
 const svgUri = (svg) => "data:image/svg+xml," + encodeURIComponent(svg);
@@ -257,7 +268,7 @@ const hat = (type, message0, args0, st, extra) => Object.assign({ type, message0
 const cblock = (type, message0, args0, extra) => Object.assign({ type, message0, args0,
   message1:"%1", args1:[{ type:"input_statement", name:"SUBSTACK" }], previousStatement:null, nextStatement:null, style:"control_blocks" }, extra);
 
-Blockly.defineBlocksWithJsonArray([
+const BLOCK_DEFS = [
   { type:"scratch_text", message0:"%1", args0:[{ type:"field_input", name:"TEXT", text:"" }], output:null, style:"text_blocks" },
 
   // 動作
@@ -396,7 +407,8 @@ Blockly.defineBlocksWithJsonArray([
   stmt("music_setTempo", "%1 演奏速度設為 %2", [IMG(NOTE_ICON), IN("TEMPO")], "music_blocks"),
   stmt("music_changeTempo", "%1 演奏速度改變 %2", [IMG(NOTE_ICON), IN("TEMPO")], "music_blocks"),
   rep("music_getTempo", "%1 演奏速度", [IMG(NOTE_ICON)], "music_blocks", "Number"),
-]);
+];
+Blockly.defineBlocksWithJsonArray(BLOCK_DEFS);
 
 // ===== 4. 積木轉成程式碼 =====
 // 每個程式（帽子積木下面那一串）變成一個 generator 函式，迴圈尾端和「等待」會暫停，模擬 Scratch 一格一格的執行，
@@ -1362,8 +1374,61 @@ function gradeCurrent(onlyExample) {
     return { i, t, ...c, hidden: !onlyExample && i > 0 };
   });
   const passed = rows.filter(r => r.pass).length;
-  const score = Math.round(q.points * passed / rows.length * 10) / 10;
-  return { rows, passed, total:rows.length, score };
+  const passRatio = passed / rows.length;
+  // 部分給分：測資沒有全對時，配分的一部分（積木分比例）依用到的關鍵積木比例給分
+  const req = onlyExample ? null : keyRequirements(q);
+  let keyInfo = null, raw = q.points * passRatio;
+  if (req && req.length && passed < rows.length) {
+    const have = programTypes(state);
+    const hit = req.filter(r => r.types.some(t => have.has(t)));
+    keyInfo = { hit:hit.length, total:req.length, missing:req.filter(r => !hit.includes(r)).map(r => r.label) };
+    raw = q.points * ((1 - q.blockRatio) * passRatio + q.blockRatio * hit.length / req.length);
+  }
+  return { rows, passed, total:rows.length, score:Math.round(raw * 10 + 1e-9) / 10, keyInfo };  // 1e-9：避免 11.25 因浮點誤差被捨成 11.2
+}
+
+// ===== 積木分：檢查程式裡有沒有用到關鍵積木 =====
+// 老師在試算表寫的是積木上的文字（例如「重複」「詢問並等待」），比對每個積木去掉輸入格後的文字
+const normKey = (s) => String(s).replace(/\s+/g, "").toLowerCase();
+const BLOCK_LABELS = { variables_set:"變數設為", math_change:"變數改變", variables_get:"變數", procedures_defnoreturn:"定義", procedures_callnoreturn:"自訂積木" };
+BLOCK_DEFS.forEach(d => {
+  if (d.type === "scratch_text") return;
+  const text = ["message0", "message1", "message2", "message3"].map(k => d[k] || "").join("").replace(/%\d+/g, "");
+  BLOCK_LABELS[d.type] = normKey(text);
+});
+const BLOCK_ALIAS = { "加":["operator_add"], "減":["operator_subtract"], "乘":["operator_multiply"], "除":["operator_divide"],
+  "大於":["operator_gt"], "小於":["operator_lt"], "等於":["operator_equals"], "設定變數":["variables_set"], "改變變數":["math_change"],
+  "定義積木":["procedures_defnoreturn"], "我的積木":["procedures_callnoreturn"], "清單":["data_listcontents"],
+  "當綠旗被點擊":["event_whenflagclicked"], "綠旗":["event_whenflagclicked"] };
+function typesFor(keyword) {
+  const k = normKey(keyword);
+  if (BLOCK_ALIAS[k]) return BLOCK_ALIAS[k];
+  return Object.keys(BLOCK_LABELS).filter(t => BLOCK_LABELS[t] === k || BLOCK_LABELS[t].includes(k));
+}
+// 程式裡「有效」的積木種類：只算接在帽子積木（當綠旗被點擊等）或「定義」積木下面的
+function programTypes(state) {
+  loadInto(headlessWs, state);
+  const set = new Set();
+  headlessWs.getTopBlocks(false).forEach(top => {
+    if (HATS[top.type] || top.type === "procedures_defnoreturn")
+      top.getDescendants(false).forEach(b => { if (!b.isShadow() && b.isEnabled()) set.add(b.type); });
+  });
+  return set;
+}
+// 每題的關鍵積木：老師列的關鍵積木；沒列但有答案碼時，用答案碼裡的積木（不含「當綠旗被點擊」）
+const keyCache = {};
+function keyRequirements(q) {
+  if (!q.blockRatio) return null;
+  if (q.id in keyCache) return keyCache[q.id];
+  let req = null;
+  if (q.keyBlocks && q.keyBlocks.length) req = q.keyBlocks.map(k => ({ label:k, types:typesFor(k) }));
+  else if (q.answer) {
+    try {
+      req = [...programTypes(decodeAnswer(q.answer))].filter(t => t !== "event_whenflagclicked")
+        .map(t => ({ label:BLOCK_LABELS[t] || t, types:[t] }));
+    } catch (e) { req = null; }
+  }
+  return keyCache[q.id] = req;
 }
 
 const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
@@ -1380,7 +1445,10 @@ function showResult(res, isSubmit) {
       <td class="${r.pass ? "pass" : "fail"}">${r.pass ? "✔" : "✘"}</td></tr>`;
   }
   html += `</table>`;
-  if (isSubmit) html = `<p><b>通過 ${res.passed}/${res.total} 筆測資，本題得分 ${res.score} / ${q.points}</b></p>` + html;
+  if (isSubmit) {
+    const key = res.keyInfo ? `<br>關鍵積木：用到 ${res.keyInfo.hit}/${res.keyInfo.total}${res.keyInfo.missing.length ? `（缺少：${esc(res.keyInfo.missing.join("、"))}）` : ""}` : "";
+    html = `<p><b>通過 ${res.passed}/${res.total} 筆測資，本題得分 ${res.score} / ${q.points}</b>${key}</p>` + html;
+  }
   $("result").innerHTML = html;
 }
 
@@ -1403,7 +1471,9 @@ function renderTabs() {
   questions.forEach((q, i) => {
     const b = document.createElement("button");
     b.className = i === current ? "active" : "";
-    b.innerHTML = esc(q.title) + (q.id in scores ? `<span class="score">${scores[q.id]}分</span>` : "");
+    const done = submitted[q.title];
+    const badge = done ? (SHOW_SCORE_AFTER_SUBMIT || handedIn ? `${done.score}分` : "已提交") : q.id in scores ? `${scores[q.id]}分` : "";
+    b.innerHTML = esc(q.title) + (badge ? `<span class="score">${badge}</span>` : "");
     b.onclick = () => switchTo(i);
     tabs.appendChild(b);
   });
@@ -1411,6 +1481,11 @@ function renderTabs() {
 function exampleText(q) {
   const t = q.tests[0], e = expectedFor(q, 0);
   const ins = q.inputs.length ? `詢問時依序得到：${q.inputs.map(k => `${k} = ${t.in[k]}`).join("，")}\n` : "";
+  const unknown = (q.keyBlocks || []).filter(k => !typesFor(k).length);
+  if (unknown.length) return `（老師請注意：找不到關鍵積木「${unknown.join("」「")}」，請檢查試算表的寫法）\n` + exampleTextBody(q, t, e, ins);
+  return exampleTextBody(q, t, e, ins);
+}
+function exampleTextBody(q, t, e, ins) {
   if (e.error) return ins + e.error;
   if (q.mode === "畫筆") return ins + "畫出下面的圖形（角色從 x=0, y=0、面朝 90 度開始）。";
   if (q.mode === "角色位置") return ins + `讓角色最後停在：${fmtPos(e.pos)}（角色從 x=0, y=0、面朝 90 度開始）`;
@@ -1421,7 +1496,6 @@ function renderPanel() {
   const has = questions.length > 0;
   $("qPanel").hidden = !has;
   $("empty").hidden = has;
-  $("btnSubmitAll").disabled = !has;
   if (!has) {
     const problems = bankProblems.length
       ? `<p>試算表裡有題目格式不對，所以沒有顯示：</p><ul>${bankProblems.map(p => `<li>${esc(p)}</li>`).join("")}</ul>` : "";
@@ -1432,6 +1506,7 @@ function renderPanel() {
       ready: "<h2>還沒有題目</h2><p>老師還沒有在試算表的「題庫」中勾選啟用題目。</p>" + problems,
     }[bankState];
     drawTarget();
+    updateLock();
     return;
   }
   const q = questions[current];
@@ -1439,6 +1514,7 @@ function renderPanel() {
   $("desc").textContent = q.desc;
   $("example").textContent = exampleText(q);
   drawTarget();
+  updateLock();
 }
 function switchTo(i) {
   if (loadedId) saved[loadedId] = Blockly.serialization.workspaces.save(ws);
@@ -1447,8 +1523,27 @@ function switchTo(i) {
   loadedId = q.id;
   loadInto(ws, saved[q.id] || starterState());
   $("result").innerHTML = "";
+  $("shotMsg").hidden = true;
   renderPanel();
   renderTabs();
+}
+
+// 已提交的題目（或已交卷）：程式區蓋上一層，不能再修改，也不能再提交
+function updateLock() {
+  const q = questions[current];
+  const done = q && submitted[q.title];
+  const locked = !!done || handedIn;
+  $("lockLayer").hidden = !locked || !q;
+  if (locked && q) {
+    $("lockText").textContent = handedIn ? "你已經交卷了，不能再修改。"
+      : SHOW_SCORE_AFTER_SUBMIT ? `這題已經提交（得分 ${done.score} / ${done.points}），不能再修改。`
+      : "這題已經提交，不能再修改。分數會在交卷後公布。";
+  }
+  $("btnCheck").disabled = locked || !q;
+  $("btnCheck").hidden = questions.length === 1;  // 只有一題時，提交本題和交卷重複，只留交卷
+  $("btnRun").disabled = locked || !q;
+  $("btnSubmitAll").disabled = handedIn || !questions.length;
+  $("btnSubmitAll").textContent = handedIn ? "已交卷" : "交卷";
 }
 
 function copyText(text, textarea, msgEl, okText) {
@@ -1457,27 +1552,39 @@ function copyText(text, textarea, msgEl, okText) {
   else fallback();
 }
 
-$("btnRun").onclick = () => {
-  const q = questions[current];
-  showResult(gradeCurrent(true), false);
-};
+$("btnRun").onclick = () => showResult(gradeCurrent(true), false);
+
+// 提交本題：每題只能提交一次。試算表記下分數與截圖，重新整理、換電腦都不能重做
 $("btnCheck").onclick = async () => {
+  const q = questions[current];
+  if (submitted[q.title] || handedIn) return updateLock();
   const who = studentInfoOrStop("提交");
   if (!who) return;
-  const q = questions[current];
   const res = gradeCurrent(false);
-  scores[q.id] = res.score;
-  showResult(res, true);
-  renderTabs();
   const say = (text, ok) => { $("shotMsg").hidden = false; $("shotMsg").textContent = text; $("shotMsg").className = "msg " + (ok ? "ok" : "err"); };
+  if (!SCRIPT_URL) {  // 沒有設定網址：只能練習，直接顯示結果
+    scores[q.id] = res.score; showResult(res, true); renderTabs();
+    return say("還沒設定網址，這次提交沒有記錄。", false);
+  }
   $("btnCheck").disabled = true;
+  say("提交中…", true);
+  let png = null;
+  try { png = composeShot(who, `提交本題：${q.title}`, [{ title:q.title, score:`${res.score} / ${q.points} 分`, img: await workspaceImage() }]); } catch (e) {}
   try {
-    const img = await workspaceImage();
-    const png = composeShot(who, `提交本題：${q.title}`, [{ title:q.title, score:`${res.score} / ${q.points} 分`, img }]);
-    say("答題截圖上傳中…", true);
-    say(await uploadShot(who, png), true);
-  } catch (e) { say(e.message, false); }
-  finally { $("btnCheck").disabled = false; }
+    const d = await api({ type:"submit", ...who, title:q.title, score:res.score, points:q.points, image:png });
+    if (d.handedIn) { handedIn = true; say("你已經交卷了，不能再提交。", false); }
+    else if (d.already) { submitted[q.title] = { score:d.score, points:d.points }; say("這題之前已經提交過了，以第一次提交的結果為準。", false); }
+    else {
+      submitted[q.title] = { score:res.score, points:q.points };
+      scores[q.id] = res.score;
+      if (SHOW_SCORE_AFTER_SUBMIT) showResult(res, true);
+      say(SHOW_SCORE_AFTER_SUBMIT ? `✔ 已提交，得分 ${res.score} / ${q.points}。` : "✔ 已提交。分數會在交卷後公布。", true);
+    }
+  } catch (e) {
+    say("提交失敗：" + e.message + " 請確認網路連線後，再按一次「提交本題」。", false);
+  }
+  updateLock();
+  renderTabs();
 };
 
 // ===== 11. 學生資料與交卷 =====
@@ -1514,12 +1621,29 @@ function studentErrors() {
   studentFields.forEach(f => $(f).classList.toggle("missing", errs.some(e => e[0] === f)));
   return errs;
 }
-// 填完班級或座號、離開欄位時就先檢查，不用等到交卷
+// 填完班級或座號、離開欄位時就先檢查，並向試算表查詢這位學生已提交的題目
 ["studentClass", "studentSeat"].forEach(f => $(f).addEventListener("change", () => {
   const err = (f === "studentClass" ? classError : seatError)($(f).value.trim());
   $(f).classList.toggle("missing", !!err);
   headMsg(err);
+  refreshStatus();
 }));
+
+// 從試算表讀回這位學生（班級＋座號）的提交狀態，鎖住已提交的題目
+let statusKey = "";
+async function refreshStatus() {
+  const cls = $("studentClass").value.trim(), seat = $("studentSeat").value.trim();
+  const key = cls + "#" + seat;
+  if (key !== statusKey) { submitted = {}; handedIn = false; statusKey = key; renderTabs(); updateLock(); }
+  if (!SCRIPT_URL || classError(cls) || seatError(seat)) return;
+  try {
+    const d = await api({ type:"status", cls, seat });
+    if (statusKey !== key) return;  // 查詢期間又改了班級座號
+    submitted = d.submitted || {};
+    handedIn = !!d.handedIn;
+    renderTabs(); updateLock();
+  } catch (e) { console.warn("查詢提交狀態失敗", e); }
+}
 
 // 提交本題、交卷前都要先填對班級、座號、姓名（截圖檔名要用）
 function studentInfoOrStop(action) {
@@ -1533,7 +1657,9 @@ function studentInfoOrStop(action) {
   return { cls:$("studentClass").value.trim(), seat:$("studentSeat").value.trim(), name:$("studentName").value.trim() };
 }
 
+// 交卷：已提交的題目用提交時的分數，還沒提交的題目現在評分並一起記錄；每人只能交一次
 $("btnSubmitAll").onclick = async () => {
+  if (handedIn) return updateLock();
   const who = studentInfoOrStop("交卷");
   if (!who) return;
   const { cls, seat, name } = who;
@@ -1541,62 +1667,87 @@ $("btnSubmitAll").onclick = async () => {
 
   saved[loadedId] = Blockly.serialization.workspaces.save(ws);
   const keep = current;
-  let total = 0, full = 0, rows = "", csv = [];
-  const scoreMap = {}, sections = [];
+  const results = [], sections = [];
   for (let i = 0; i < questions.length; i++) {
     const q = questions[i];
     current = i;
     loadedId = q.id;
     loadInto(ws, saved[q.id] || starterState());
-    const res = gradeCurrent(false);
-    scores[q.id] = res.score;
-    scoreMap[q.title] = res.score;
-    total += res.score; full += Number(q.points);
-    rows += `<tr><td>${esc(q.title)}</td><td>${res.passed}/${res.total}</td><td>${res.score} / ${q.points}</td></tr>`;
-    csv.push(res.score);
+    const done = submitted[q.title];
+    const res = done ? { score:done.score, note:"提交時評分" } : (() => { const r = gradeCurrent(false); return { score:r.score, note:`${r.passed}/${r.total}` + (r.keyInfo ? `，積木 ${r.keyInfo.hit}/${r.keyInfo.total}` : "") }; })();
+    results.push({ q, ...res, fresh:!done });
     let img = null;
     try { img = await workspaceImage(); } catch (e) {}
-    sections.push({ title:q.title, score:`${res.score} / ${q.points} 分`, img });
+    sections.push({ q, img });
   }
   switchTo(keep); // 此時工作區內容與最後一題的存檔相同，可安全切回
-  total = Math.round(total * 10) / 10;
+
+  // 還沒提交的題目先記到「提交紀錄」；如果其實早就提交過（例如在別台電腦），改用當時的分數
+  if (SCRIPT_URL) {
+    for (const r of results.filter(r => r.fresh)) {
+      try {
+        const d = await api({ type:"submit", ...who, title:r.q.title, score:r.score, points:r.q.points });
+        if (d.already && !d.handedIn) { r.score = d.score; r.note = "提交時評分"; }
+        if (d.handedIn) handedIn = true;
+      } catch (e) {}
+    }
+  }
+  if (handedIn) { updateLock(); headMsg("你已經交過卷了，成績以第一次交卷為準。"); return; }
+
+  results.forEach(r => { scores[r.q.id] = r.score; submitted[r.q.title] = { score:r.score, points:r.q.points }; });
+  const total = Math.round(results.reduce((s, r) => s + r.score, 0) * 10) / 10;
+  const full = results.reduce((s, r) => s + Number(r.q.points), 0);
+  const scoreMap = Object.fromEntries(results.map(r => [r.q.title, r.score]));
   const cell = (s) => /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  $("rCsv").value = `班級,座號,姓名,${questions.map(q => cell(q.title)).join(",")},總分\n${cell(cls)},${seat},${cell(name)},${csv.join(",")},${total}`;
+  $("rCsv").value = `班級,座號,姓名,${questions.map(q => cell(q.title)).join(",")},總分\n${cell(cls)},${seat},${cell(name)},${results.map(r => r.score).join(",")},${total}`;
   $("rMsg").textContent = "";
   $("report").innerHTML =
     `<p>班級：<b>${esc(cls)}</b>　座號：<b>${esc(seat)}</b>　姓名：<b>${esc(name)}</b><br>交卷時間：${new Date().toLocaleString()}</p>
-     <table><tr><th>題目</th><th>通過測資</th><th>得分</th></tr>${rows}
+     <table><tr><th>題目</th><th>通過測資</th><th>得分</th></tr>${results.map(r => `<tr><td>${esc(r.q.title)}</td><td>${esc(r.note)}</td><td>${r.score} / ${r.q.points}</td></tr>`).join("")}
      <tr><th colspan="2">總分</th><th>${total} / ${full}</th></tr></table>`;
   $("reportDlg").showModal();
   $("rShot").textContent = "";
-  await sendSubmission({ cls, seat, name, total, full, scores:scoreMap });
+  const accepted = await sendSubmission({ cls, seat, name, total, full, scores:scoreMap });
+  renderTabs(); updateLock();
+  if (!accepted) return;
+
   // 交卷截圖：所有題目的程式畫面合成一張
   const sayShot = (text, ok) => { $("rShot").textContent = text; $("rShot").className = "msg " + (ok ? "ok" : "err"); };
-  $("btnSubmitAll").disabled = true;
   try {
     sayShot("答題截圖上傳中…", true);
-    sayShot(await uploadShot(who, composeShot(who, `交卷　總分 ${total} / ${full} 分`, sections)), true);
-  } catch (e) { sayShot(e.message, false); }
-  finally { $("btnSubmitAll").disabled = false; }
+    const png = composeShot(who, `交卷　總分 ${total} / ${full} 分`, sections.map((s, i) => ({ title:s.q.title, score:`${results[i].score} / ${s.q.points} 分`, img:s.img })));
+    const d = await api({ type:"screenshot", ...who, image:png });
+    sayShot(`✔ 答題截圖已上傳（${d.file}）。`, true);
+  } catch (e) { sayShot("答題截圖沒有上傳成功：" + e.message, false); }
 };
 
-// 把成績送到 Google 試算表的「成績」工作表（每交一次新增一列）
+// 把成績送到 Google 試算表的「成績」工作表；每人只能交一次。回傳成績是否被收下
 async function sendSubmission(record) {
   const say = (text, ok) => { $("rSend").textContent = text; $("rSend").className = "msg " + (ok ? "ok" : "err"); };
-  if (!SCRIPT_URL) return say("還沒設定成績網址，成績沒有送出，請把下方 CSV 交給老師。", false);
+  if (!SCRIPT_URL) { say("還沒設定成績網址，成績沒有送出，請把下方 CSV 交給老師。", false); $("btnSubmitAll").disabled = false; return false; }
   say("成績傳送中…", true);
-  $("btnSubmitAll").disabled = true;
   try {
-    // 用 text/plain 送出，Google Apps Script 才收得到（不會被瀏覽器的跨網域檢查擋下）
-    const res = await fetch(SCRIPT_URL, { method:"POST", headers:{ "Content-Type":"text/plain;charset=utf-8" }, body:JSON.stringify(record) });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || "unknown");
+    const d = await api(record);
+    handedIn = true;
+    if (d.already) { say("你已經交過卷了，成績以第一次交卷為準。", false); return false; }
     say("✔ 成績已送給老師。", true);
+    return true;
   } catch (e) {
-    say("成績沒有送出：請確認網路連線後再按一次「交卷」，或把下方 CSV 交給老師。", false);
-  } finally {
+    say("成績沒有送出：" + e.message + " 請確認網路連線後再按一次「交卷」，或把下方 CSV 交給老師。", false);
     $("btnSubmitAll").disabled = false;
+    return false;
   }
+}
+
+// 送資料到 Google Apps Script。用 text/plain 送出，才不會被瀏覽器的跨網域檢查擋下
+async function api(body) {
+  let d;
+  try {
+    const res = await fetch(SCRIPT_URL, { method:"POST", headers:{ "Content-Type":"text/plain;charset=utf-8" }, body:JSON.stringify(body) });
+    d = await res.json();
+  } catch (e) { throw new Error("連不上老師的試算表。"); }
+  if (!d.ok && !d.already) throw new Error(d.error || "試算表回傳錯誤。");
+  return d;
 }
 
 // ===== 答題截圖：把程式區的積木轉成圖片，上傳到老師的雲端硬碟 =====
@@ -1652,17 +1803,6 @@ function composeShot(who, heading, sections) {
   return c.toDataURL("image/png").split(",")[1];
 }
 
-async function uploadShot(who, png) {
-  if (!SCRIPT_URL) throw new Error("還沒設定網址，答題截圖沒有上傳。");
-  let data;
-  try {
-    const res = await fetch(SCRIPT_URL, { method:"POST", headers:{ "Content-Type":"text/plain;charset=utf-8" },
-      body:JSON.stringify({ type:"screenshot", cls:who.cls, seat:who.seat, name:who.name, image:png }) });
-    data = await res.json();
-  } catch (e) { throw new Error("答題截圖沒有上傳成功，請確認網路連線後再試一次。"); }
-  if (!data.ok) throw new Error("答題截圖沒有上傳成功：" + (data.error || "請告訴老師"));
-  return `✔ 答題截圖已上傳（${data.file}）。`;
-}
 $("rCopy").onclick = () => copyText($("rCsv").value, $("rCsv"), $("rMsg"), "已複製，可貼到 Excel");
 $("rClose").onclick = () => $("reportDlg").close();
 
@@ -1693,13 +1833,14 @@ async function loadBank() {
     if (data.error) throw new Error(data.error);
     bankProblems = data.problems || [];
     if (bankProblems.length) console.warn("題庫格式問題：", bankProblems);
-    questions = (data.questions || []).map(q => Object.assign({ mode:"說出", answer:"" }, q, {
+    questions = (data.questions || []).map(q => Object.assign({ mode:"說出", answer:"", keyBlocks:[], blockRatio:0 }, q, {
       id:q.title,
       mode: MODES.includes(q.mode) ? q.mode : "說出",
       tests: q.tests.map(t => ({ in:t.in || {}, expect: t.expect !== undefined ? t.expect : Array.isArray(t.out) ? t.out.join("|") : null })),
     }));
     bankState = "ready";
     if (questions.length) switchTo(0); else renderPanel();
+    refreshStatus();
   } catch (e) {
     console.error(e);
     bankState = "error";
