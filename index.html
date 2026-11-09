@@ -57,6 +57,32 @@
   /* 畫筆題的目標圖形（題目的一部分，不是可執行的舞台） */
   #target { display:block; width:100%; max-width:320px; aspect-ratio:4/3; border:1px solid var(--line); border-radius:6px; background:#fff; }
 
+  /* 舞台與角色（只能擺放，不能執行） */
+  #stagePane { display:flex; flex-direction:column; gap:8px; background:var(--card); padding:10px; border-radius:8px; margin-top:auto; }
+  #stage { display:block; width:100%; aspect-ratio:4/3; border:1px solid var(--line); border-radius:6px; background:#fff; touch-action:none; cursor:grab; }
+  #spriteInfo { display:flex; flex-wrap:wrap; gap:6px 10px; font-size:13px; }
+  #spriteInfo label { display:flex; align-items:center; gap:4px; }
+  #spriteInfo input[type=number] { width:62px; padding:3px 6px; }
+  #spriteInfo input#spName { padding:3px 6px; }
+  #spriteRow { display:flex; gap:8px; align-items:flex-start; }
+  #lookRow { display:flex; flex-direction:column; gap:4px; padding-bottom:8px; border-bottom:1px solid var(--line); }
+  #lookList { display:flex; flex-wrap:wrap; gap:6px; }
+  #lookList .spTile, #lookList .spAdd { width:54px; min-height:50px; }
+  #lookList .spTile img { width:32px; height:26px; }
+  #spriteList { flex:1; min-width:0; display:flex; flex-wrap:wrap; gap:6px; }
+  .spWrap { position:relative; }
+  .spTile { width:64px; padding:4px 2px; display:flex; flex-direction:column; align-items:center; gap:2px; font-size:11px; background:var(--code); border:2px solid transparent; border-radius:8px; color:var(--strong); }
+  .spTile.sel { border-color:var(--scratch); }
+  .spTile img { width:40px; height:34px; object-fit:contain; }
+  .spTile span { max-width:58px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .spDel { position:absolute; top:-7px; right:-7px; width:20px; height:20px; padding:0; border-radius:50%; background:var(--bad); border-color:var(--bad); color:#fff; font-size:12px; line-height:1; }
+  .spAdd { width:64px; min-height:58px; font-size:22px; color:var(--scratch); border-style:dashed; }
+  #backdropBox { display:flex; flex-direction:column; gap:2px; }
+  select { font:inherit; color:var(--strong); background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:4px 6px; }
+  #costumeDlg { width:min(420px, 92vw); }
+  button.small { padding:3px 8px; font-size:13px; }
+  #costumeList { display:flex; flex-wrap:wrap; gap:8px; }
+
   /* 題目卡 */
   #card { min-width:0; display:flex; flex-direction:column; gap:10px; background:var(--card); padding:14px; border-radius:8px; }
   #card h2 { margin:0; font-size:18px; color:var(--strong); text-wrap:balance; }
@@ -89,7 +115,7 @@
   .scratchCatDot { width:18px; height:18px; border-radius:50%; border:1px solid rgba(0,0,0,.15); }
   .blocklyToolboxDiv .blocklyTreeLabel { font-family:var(--font-body); font-size:11px; color:#575e75; }
   .blocklyToolboxDiv .scratchSelected .blocklyTreeLabel { color:#4c97ff; }
-  @media (max-width: 900px) { main { flex-direction:column; } #side { width:auto; overflow:visible; } #blocklyDiv { min-height:62vh; } body { height:auto; } }
+  @media (max-width: 900px) { main { flex-direction:column; } #side { width:auto; overflow:visible; } #stage { max-width:360px; } #blocklyDiv { min-height:62vh; } body { height:auto; } }
 </style>
 
 <script src="https://unpkg.com/blockly@10.4.3/blockly.min.js"></script>
@@ -113,14 +139,38 @@
       <div id="qPanel" hidden style="display:contents">
         <h2 id="qTitle"></h2>
         <div id="desc"></div>
-        <div><div class="label">範例</div><pre id="example"></pre></div>
+        <p id="keyWarn" class="msg err" hidden></p>
         <canvas id="target" width="480" height="360" hidden aria-label="目標圖形"></canvas>
         <div class="row">
-          <button class="accent" id="btnRun">檢查範例</button>
           <button class="primary" id="btnCheck">✔ 提交本題</button>
         </div>
         <div id="result" class="tablewrap"></div>
         <p id="shotMsg" class="msg" hidden></p>
+      </div>
+    </section>
+    <!-- 舞台與角色：只能擺放角色、換背景，不會執行程式 -->
+    <section id="stagePane" aria-label="舞台與角色">
+      <canvas id="stage" width="480" height="360" aria-label="舞台（拖曳角色可以移動位置）"></canvas>
+      <div id="spriteInfo">
+        <label>角色 <input id="spName" size="6"></label>
+        <label>x <input id="spX" type="number" step="1"></label>
+        <label>y <input id="spY" type="number" step="1"></label>
+        <label><input id="spShow" type="checkbox"> 顯示</label>
+        <label>大小 <input id="spSize" type="number" min="5" max="500" step="5"></label>
+        <label>方向 <input id="spDir" type="number" min="-179" max="180" step="15"></label>
+      </div>
+      <div id="lookRow">
+        <span class="label">造型</span>
+        <div id="lookList"></div>
+      </div>
+      <div id="spriteRow">
+        <div id="spriteList"></div>
+        <div id="backdropBox">
+          <span class="label">背景</span>
+          <select id="backdropSel" aria-label="背景"></select>
+          <button id="backdropUp" class="small">上傳背景</button>
+          <input id="backdropFile" type="file" accept="image/*" hidden>
+        </div>
       </div>
     </section>
   </aside>
@@ -129,6 +179,17 @@
     <div id="lockLayer" hidden><p id="lockText"></p></div>
   </div>
 </main>
+
+<dialog id="costumeDlg">
+  <h3 id="costumeDlgTitle">選擇角色</h3>
+  <div id="costumeList"></div>
+  <div class="row">
+    <button id="spriteUp" class="accent">上傳角色圖片</button>
+    <input id="spriteFile" type="file" accept="image/*" hidden>
+    <button id="costumeClose">取消</button>
+  </div>
+  <p id="upMsg" class="msg err" hidden></p>
+</dialog>
 
 <dialog id="reportDlg">
   <h3>成績單</h3>
@@ -1082,7 +1143,7 @@ class VM {
 
 // 畫角色（含造型、方向、尺寸、圖像效果）
 function drawSprite(g, s, maskOnly) {
-  const c = COSTUMES[s.costume], k = s.size / 100;
+  const c = s.look || COSTUMES[s.costume], k = s.size / 100;  // 舞台上的角色用自己的造型（可能是上傳的圖片）
   g.save();
   g.translate(240 + s.x, 180 - s.y);
   if (s.rot === "all around") g.rotate((s.dir - 90) * Math.PI / 180);
@@ -1478,19 +1539,10 @@ function renderTabs() {
     tabs.appendChild(b);
   });
 }
-function exampleText(q) {
-  const t = q.tests[0], e = expectedFor(q, 0);
-  const ins = q.inputs.length ? `詢問時依序得到：${q.inputs.map(k => `${k} = ${t.in[k]}`).join("，")}\n` : "";
+// 試算表的關鍵積木寫錯時，在題目下方提醒老師（出題測試時就會看到）
+function keyWarning(q) {
   const unknown = (q.keyBlocks || []).filter(k => !typesFor(k).length);
-  if (unknown.length) return `（老師請注意：找不到關鍵積木「${unknown.join("」「")}」，請檢查試算表的寫法）\n` + exampleTextBody(q, t, e, ins);
-  return exampleTextBody(q, t, e, ins);
-}
-function exampleTextBody(q, t, e, ins) {
-  if (e.error) return ins + e.error;
-  if (q.mode === "畫筆") return ins + "畫出下面的圖形（角色從 x=0, y=0、面朝 90 度開始）。";
-  if (q.mode === "角色位置") return ins + `讓角色最後停在：${fmtPos(e.pos)}（角色從 x=0, y=0、面朝 90 度開始）`;
-  if (q.mode === "音符") return ins + `依序演奏：${fmtNotes(e.notes)}`;
-  return ins + `應該說出：\n${e.out.join("\n")}`;
+  return unknown.length ? `老師請注意：找不到關鍵積木「${unknown.join("」「")}」，請檢查試算表的寫法。` : "";
 }
 function renderPanel() {
   const has = questions.length > 0;
@@ -1512,7 +1564,8 @@ function renderPanel() {
   const q = questions[current];
   $("qTitle").textContent = `${q.title}（${q.points} 分）`;
   $("desc").textContent = q.desc;
-  $("example").textContent = exampleText(q);
+  $("keyWarn").textContent = keyWarning(q);
+  $("keyWarn").hidden = !$("keyWarn").textContent;
   drawTarget();
   updateLock();
 }
@@ -1541,7 +1594,6 @@ function updateLock() {
   }
   $("btnCheck").disabled = locked || !q;
   $("btnCheck").hidden = questions.length === 1;  // 只有一題時，提交本題和交卷重複，只留交卷
-  $("btnRun").disabled = locked || !q;
   $("btnSubmitAll").disabled = handedIn || !questions.length;
   $("btnSubmitAll").textContent = handedIn ? "已交卷" : "交卷";
 }
@@ -1551,8 +1603,6 @@ function copyText(text, textarea, msgEl, okText) {
   if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(() => { msgEl.textContent = okText; }, fallback);
   else fallback();
 }
-
-$("btnRun").onclick = () => showResult(gradeCurrent(true), false);
 
 // 提交本題：每題只能提交一次。試算表記下分數與截圖，重新整理、換電腦都不能重做
 $("btnCheck").onclick = async () => {
@@ -1824,6 +1874,228 @@ $("codeLoad").onclick = () => {
   catch (e) { codeMsg("答案碼無法讀取：" + e.message, false); }
 };
 $("codeClose").onclick = () => $("codeDlg").close();
+
+// ===== 舞台與角色：只能新增角色、換造型、拖曳擺放、改屬性和換背景，沒有綠旗，不會執行程式，也不影響評分 =====
+// 上傳的圖片只放在這個網頁裡，不會傳到任何地方；重新整理後就不見了
+const stageSprites = [];
+let selSprite = null, topLayer = 0;
+const effectsNone = { ghost:0, color:0, brightness:0 };
+const stageLooks = COSTUMES.map(c => ({ ...c, thumb:c.canvas.toDataURL() }));                // 角色造型：內建 + 上傳
+const stageBackdrops = BACKDROP_NAMES.map((name, i) => ({ name, canvas:backdropCache[i] }));  // 背景：內建 + 上傳
+let stageBackdrop = 0;
+function addSprite(look) {
+  let n = stageSprites.length + 1;
+  while (stageSprites.some(s => s.name === "角色" + n)) n++;
+  // 每個角色有自己的造型清單（costumes），look 是目前的造型
+  const s = { name:"角色" + n, costumes:[look], look, x:0, y:0, dir:90, size:100, visible:true, rot:"all around", effects:effectsNone, layer:++topLayer };
+  if (stageSprites.length) { s.x = Math.round(Math.random() * 200 - 100); s.y = Math.round(Math.random() * 140 - 70); }
+  stageSprites.push(s);
+  selectSprite(s);
+}
+function selectSprite(s) { selSprite = s; renderSpriteList(); renderSpriteInfo(); drawStage(); }
+function drawStage() {
+  const g = $("stage").getContext("2d");
+  g.fillStyle = "#fff"; g.fillRect(0, 0, 480, 360);
+  g.drawImage(stageBackdrops[stageBackdrop].canvas, 0, 0, 480, 360);
+  byLayer().forEach(s => { if (s.visible) drawSprite(g, s); });
+}
+function byLayer() { return [...stageSprites].sort((a, b) => a.layer - b.layer); }
+function renderSpriteList() {
+  const list = $("spriteList");
+  list.innerHTML = "";
+  stageSprites.forEach(s => {
+    const b = document.createElement("button");
+    b.className = "spTile" + (s === selSprite ? " sel" : "");
+    b.title = s.name;
+    b.innerHTML = `<img alt="" src="${s.look.thumb}"><span>${esc(s.name)}</span>`;
+    b.onclick = () => selectSprite(s);
+    const wrap = document.createElement("div");
+    wrap.className = "spWrap";
+    wrap.appendChild(b);
+    if (s === selSprite) {
+      const del = document.createElement("button");
+      del.className = "spDel"; del.textContent = "×"; del.title = "刪除角色"; del.setAttribute("aria-label", "刪除 " + s.name);
+      del.onclick = () => {
+        stageSprites.splice(stageSprites.indexOf(s), 1);
+        selectSprite(stageSprites[stageSprites.length - 1] || null);
+      };
+      wrap.appendChild(del);
+    }
+    list.appendChild(wrap);
+  });
+  const add = document.createElement("button");
+  add.className = "spAdd"; add.textContent = "＋"; add.title = "選擇角色"; add.setAttribute("aria-label", "新增角色");
+  add.onclick = () => openCostumeDlg("sprite");
+  list.appendChild(add);
+}
+// 選取角色的造型清單：點一下換成那個造型，× 刪除（至少留一個），＋ 新增造型
+function renderLookList() {
+  const s = selSprite, list = $("lookList");
+  list.innerHTML = "";
+  $("lookRow").hidden = !s;
+  if (!s) return;
+  s.costumes.forEach((c, i) => {
+    const b = document.createElement("button");
+    b.className = "spTile" + (c === s.look ? " sel" : "");
+    b.title = `${i + 1}. ${c.name}`;
+    b.innerHTML = `<img alt="" src="${c.thumb}"><span>${i + 1}. ${esc(c.name)}</span>`;
+    b.onclick = () => { s.look = c; renderSpriteList(); renderLookList(); drawStage(); };
+    const wrap = document.createElement("div");
+    wrap.className = "spWrap";
+    wrap.appendChild(b);
+    if (c === s.look && s.costumes.length > 1) {
+      const del = document.createElement("button");
+      del.className = "spDel"; del.textContent = "×"; del.title = "刪除造型"; del.setAttribute("aria-label", "刪除造型 " + c.name);
+      del.onclick = () => {
+        s.costumes.splice(i, 1);
+        s.look = s.costumes[Math.min(i, s.costumes.length - 1)];
+        renderSpriteList(); renderLookList(); drawStage();
+      };
+      wrap.appendChild(del);
+    }
+    list.appendChild(wrap);
+  });
+  const add = document.createElement("button");
+  add.className = "spAdd"; add.textContent = "＋"; add.title = "新增造型"; add.setAttribute("aria-label", "新增造型");
+  add.onclick = () => openCostumeDlg("costume");
+  list.appendChild(add);
+}
+function addCostume(look) {
+  if (!selSprite) return;
+  selSprite.costumes.push(look);
+  selSprite.look = look;
+  renderSpriteList(); renderLookList(); drawStage();
+}
+function renderSpriteInfo() {
+  const s = selSprite;
+  renderLookList();
+  ["spName", "spX", "spY", "spShow", "spSize", "spDir"].forEach(id => $(id).disabled = !s);
+  if (!s) { ["spName", "spX", "spY", "spSize", "spDir"].forEach(id => $(id).value = ""); $("spShow").checked = false; return; }
+  $("spName").value = s.name; $("spX").value = Math.round(s.x); $("spY").value = Math.round(s.y);
+  $("spShow").checked = s.visible; $("spSize").value = s.size; $("spDir").value = s.dir;
+}
+const numIn = (id, key, lo, hi, wrap) => $(id).addEventListener("change", () => {
+  if (!selSprite) return;
+  let v = Number($(id).value);
+  if (!isFinite(v)) return renderSpriteInfo();
+  if (wrap) v = ((v + 179) % 360 + 360) % 360 - 179;  // 方向和 Scratch 一樣在 -179～180
+  selSprite[key] = Math.max(lo, Math.min(hi, v));
+  renderSpriteInfo(); drawStage();
+});
+numIn("spX", "x", -240, 240); numIn("spY", "y", -180, 180); numIn("spSize", "size", 5, 500); numIn("spDir", "dir", -179, 180, true);
+$("spShow").onchange = () => { if (selSprite) { selSprite.visible = $("spShow").checked; drawStage(); } };
+$("spName").onchange = () => {
+  const name = $("spName").value.trim();
+  if (selSprite && name && !stageSprites.some(s => s !== selSprite && s.name === name)) selSprite.name = name;
+  renderSpriteInfo(); renderSpriteList();
+};
+
+// 上傳圖片：讀成 Image，再縮小畫到 canvas（只在這台電腦的瀏覽器裡）
+function readImage(file) {
+  return new Promise((ok, fail) => {
+    if (!file || !/^image\//.test(file.type)) return fail(new Error("請選擇圖片檔（png、jpg、gif、svg）"));
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); img.naturalWidth ? ok(img) : fail(new Error("圖片無法讀取")); };
+    img.onerror = () => { URL.revokeObjectURL(url); fail(new Error("圖片無法讀取")); };
+    img.src = url;
+  });
+}
+const fileTitle = (file) => file.name.replace(/\.[^.]+$/, "").slice(0, 20) || "圖片";
+// 角色圖片最大 200×200（和內建造型一樣用兩倍解析度存）
+async function uploadSprite(file) {
+  const img = await readImage(file);
+  const k = Math.min(1, 200 / img.naturalWidth, 200 / img.naturalHeight);
+  const w = Math.max(1, Math.round(img.naturalWidth * k)), h = Math.max(1, Math.round(img.naturalHeight * k));
+  const c = mkCanvas(w * 2, h * 2);
+  c.getContext("2d").drawImage(img, 0, 0, w * 2, h * 2);
+  const look = { name:fileTitle(file), w, h, cx:w / 2, cy:h / 2, canvas:c, thumb:c.toDataURL() };
+  stageLooks.push(look);
+  return look;
+}
+// 背景圖片填滿 480×360 的舞台（超出的部分裁掉）
+async function uploadBackdrop(file) {
+  const img = await readImage(file);
+  const c = mkCanvas(480, 360), k = Math.max(480 / img.naturalWidth, 360 / img.naturalHeight);
+  const w = img.naturalWidth * k, h = img.naturalHeight * k;
+  c.getContext("2d").drawImage(img, (480 - w) / 2, (360 - h) / 2, w, h);
+  stageBackdrops.push({ name:fileTitle(file), canvas:c });
+  return stageBackdrops.length - 1;
+}
+
+// 在舞台上拖曳角色（點最上層的角色）
+function stagePoint(e) {
+  const r = $("stage").getBoundingClientRect();
+  return { x:(e.clientX - r.left) / r.width * 480 - 240, y:180 - (e.clientY - r.top) / r.height * 360 };
+}
+function spriteAt(p) {
+  const sprites = byLayer();
+  for (let i = sprites.length - 1; i >= 0; i--) {
+    const s = sprites[i], c = s.look, k = s.size / 100;
+    if (s.visible && Math.hypot(p.x - s.x, p.y - s.y) <= Math.max(c.w, c.h) * k / 2) return s;
+  }
+  return null;
+}
+let dragging = null;
+$("stage").addEventListener("pointerdown", (e) => {
+  const p = stagePoint(e), s = spriteAt(p);
+  if (!s) return;
+  s.layer = ++topLayer;  // 被點的角色移到最上層
+  dragging = { s, dx:s.x - p.x, dy:s.y - p.y };
+  $("stage").setPointerCapture(e.pointerId);
+  selectSprite(s);
+});
+$("stage").addEventListener("pointermove", (e) => {
+  if (!dragging) return;
+  const p = stagePoint(e);
+  dragging.s.x = Math.max(-240, Math.min(240, Math.round(p.x + dragging.dx)));
+  dragging.s.y = Math.max(-180, Math.min(180, Math.round(p.y + dragging.dy)));
+  $("spX").value = dragging.s.x; $("spY").value = dragging.s.y;
+  drawStage();
+});
+["pointerup", "pointercancel"].forEach(t => $("stage").addEventListener(t, () => { dragging = null; }));
+
+// 同一個視窗用在「新增角色」和「新增造型」：選內建造型或上傳圖片
+let costumeDlgMode = "sprite";
+const pickLook = (look) => { $("costumeDlg").close(); costumeDlgMode === "costume" ? addCostume(look) : addSprite(look); };
+function openCostumeDlg(mode) {
+  costumeDlgMode = mode;
+  $("costumeDlgTitle").textContent = mode === "costume" ? `幫「${selSprite.name}」新增造型` : "選擇角色";
+  $("spriteUp").textContent = mode === "costume" ? "上傳造型圖片" : "上傳角色圖片";
+  const list = $("costumeList");
+  list.innerHTML = "";
+  stageLooks.forEach(c => {
+    const b = document.createElement("button");
+    b.className = "spTile";
+    b.innerHTML = `<img alt="" src="${c.thumb}"><span>${esc(c.name)}</span>`;
+    b.onclick = () => pickLook(c);
+    list.appendChild(b);
+  });
+  $("upMsg").hidden = true;
+  $("costumeDlg").showModal();
+}
+$("costumeClose").onclick = () => $("costumeDlg").close();
+$("spriteUp").onclick = () => $("spriteFile").click();
+$("spriteFile").onchange = async () => {
+  const file = $("spriteFile").files[0];
+  $("spriteFile").value = "";
+  try { pickLook(await uploadSprite(file)); }
+  catch (e) { $("upMsg").textContent = e.message; $("upMsg").hidden = false; }
+};
+function renderBackdrops() {
+  $("backdropSel").innerHTML = "";
+  stageBackdrops.forEach((b, i) => $("backdropSel").add(new Option(b.name, i)));
+  $("backdropSel").value = stageBackdrop;
+}
+$("backdropSel").onchange = () => { stageBackdrop = Number($("backdropSel").value); drawStage(); };
+$("backdropUp").onclick = () => $("backdropFile").click();
+$("backdropFile").onchange = async () => {
+  const file = $("backdropFile").files[0];
+  $("backdropFile").value = "";
+  try { stageBackdrop = await uploadBackdrop(file); renderBackdrops(); drawStage(); }
+  catch (e) { blocklyDialog("alert", e.message, "", () => {}); }
+};
+renderBackdrops();
+addSprite(stageLooks[0]);
 
 // ===== 13. 啟動：讀取試算表的題庫 =====
 async function loadBank() {
