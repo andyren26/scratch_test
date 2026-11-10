@@ -1363,7 +1363,7 @@ function expectedFor(q, i) {
   if (expectCache[key]) return expectCache[key];
   const t = q.tests[i];
   let e;
-  if (t.expect != null && String(t.expect).trim() !== "") e = parseExpect(q.mode, String(t.expect));
+  if (t.expect != null && String(t.expect).trim() !== "") e = parseExpect(q.modes[0], String(t.expect));  // 自己寫標準答案只限一種評分方式
   else if (q.answer) {
     try {
       const r = runHeadless(decodeAnswer(q.answer), inputsOf(q, t));
@@ -1420,6 +1420,19 @@ function compare(mode, exp, got) {
   }
   return { pass: normalize(got.out) === normalize(exp.out), exp:exp.out.join("\n"), got:got.out.join("\n") || "（什麼都沒說）" };
 }
+// 多個評分方式：每一項都對，這筆測資才算通過
+function compareAll(modes, exp, got) {
+  if (modes.length === 1) return compare(modes[0], exp, got);
+  const parts = modes.map(m => ({ m, ...compare(m, exp, got) }));
+  return { pass: parts.every(p => p.pass),
+           exp: parts.map(p => `【${p.m}】${p.exp}`).join("\n"),
+           got: parts.map(p => `【${p.m}】${p.pass ? "✔" : "✘"} ${p.got}`).join("\n") };
+}
+function modesOf(q) {
+  const list = Array.isArray(q.modes) ? q.modes : String(q.mode || "").split(/[、,，+＋\s]+/);
+  const modes = [...new Set(list.map(m => String(m).trim()).filter(m => MODES.includes(m)))];
+  return modes.length ? modes : ["說出"];
+}
 
 function gradeCurrent(onlyExample) {
   const q = questions[current];
@@ -1430,7 +1443,7 @@ function gradeCurrent(onlyExample) {
     if (exp.error) return { i, t, pass:false, err:exp.error, hidden:false };
     const got = runHeadless(state, inputsOf(q, t));
     if (got.error) return { i, t, pass:false, err:got.error, hidden: !onlyExample && i > 0 };
-    const c = compare(q.mode, exp, got);
+    const c = compareAll(q.modes, exp, got);
     if (got.timedOut && !c.pass) c.got += "\n（程式 20 秒內沒有結束）";
     return { i, t, ...c, hidden: !onlyExample && i > 0 };
   });
@@ -1496,7 +1509,8 @@ const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;",
 const fmtIn = (o) => Object.entries(o).map(([k, v]) => `${k}=${v}`).join(", ") || "—";
 function showResult(res, isSubmit) {
   const q = questions[current];
-  const head = { "說出":["應該說出", "你說出"], "畫筆":["目標", "你畫的"], "角色位置":["應該停在", "你的角色"], "音符":["應該演奏", "你演奏"] }[q.mode];
+  const head = q.modes.length > 1 ? ["標準答案", "你的結果"]
+    : { "說出":["應該說出", "你說出"], "畫筆":["目標", "你畫的"], "角色位置":["應該停在", "你的角色"], "音符":["應該演奏", "你演奏"] }[q.modes[0]];
   let html = `<table><tr><th>#</th><th>輸入</th><th>${head[0]}</th><th>${head[1]}</th><th></th></tr>`;
   for (const r of res.rows) {
     const hide = r.hidden;
@@ -1517,7 +1531,7 @@ function showResult(res, isSubmit) {
 function drawTarget() {
   const c = $("target"), g = c.getContext("2d");
   const q = questions[current];
-  const e = q && q.mode === "畫筆" ? expectedFor(q, 0) : null;
+  const e = q && q.modes.includes("畫筆") ? expectedFor(q, 0) : null;
   c.hidden = !e || !!e.error;
   if (c.hidden) return;
   g.drawImage(backdropCache[1], 0, 0);
@@ -2107,7 +2121,7 @@ async function loadBank() {
     if (bankProblems.length) console.warn("題庫格式問題：", bankProblems);
     questions = (data.questions || []).map(q => Object.assign({ mode:"說出", answer:"", keyBlocks:[], blockRatio:0 }, q, {
       id:q.title,
-      mode: MODES.includes(q.mode) ? q.mode : "說出",
+      modes: modesOf(q),  // 評分方式可以有多個，例如 ["說出", "角色位置"]
       tests: q.tests.map(t => ({ in:t.in || {}, expect: t.expect !== undefined ? t.expect : Array.isArray(t.out) ? t.out.join("|") : null })),
     }));
     bankState = "ready";
